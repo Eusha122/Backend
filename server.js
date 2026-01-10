@@ -22,10 +22,18 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // Middleware
+// Middleware
+const getAllowedOrigins = () => {
+    if (process.env.NODE_ENV === 'production') {
+        // Strip trailing slash from FRONTEND_URL if present
+        const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : '';
+        return [frontendUrl];
+    }
+    return ['http://localhost:8080', 'http://localhost:8081', 'http://192.168.0.106:8080', 'http://192.168.0.106:8081'];
+};
+
 app.use(cors({
-    origin: process.env.NODE_ENV === 'production'
-        ? process.env.FRONTEND_URL
-        : ['http://localhost:8080', 'http://localhost:8081', 'http://192.168.0.106:8080', 'http://192.168.0.106:8081'],
+    origin: getAllowedOrigins(),
     credentials: true,
     exposedHeaders: ['ETag'], // Required for multipart uploads to read ETags
 }));
