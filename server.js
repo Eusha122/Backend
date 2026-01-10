@@ -13,6 +13,7 @@ import accessLogsRoute from './routes/access-logs.js';
 import roomAccessRoute from './routes/room-access.js';
 import deleteFileRoute from './routes/delete-file.js';
 import deleteRoomRoute from './routes/delete-room.js';
+import roomCapacityRoute from './routes/room-capacity.js';
 import { cleanupExpiredRooms } from './scripts/cleanup.js';
 
 // Load environment variables
@@ -98,6 +99,7 @@ app.use('/api/preview', downloadLimiter, previewRoutes);
 app.use('/api/bulk-download', downloadLimiter, bulkDownloadRoute);
 app.use('/api/access-logs', accessLogsRoute);
 app.use('/api/room-access', roomAccessRoute);
+app.use('/api/room-capacity', roomCapacityRoute);
 app.use('/api/delete-file', deleteFileRoute);
 app.use('/api/delete-room', deleteRoomRoute);
 
