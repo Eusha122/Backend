@@ -72,13 +72,13 @@ const limiter = rateLimit({
 
 const uploadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20, // Limit uploads to 20 per 15 minutes
+    max: 1000, // Temporarily increased for testing (was 20)
     message: { error: 'Too many uploads, please try again later.' },
 });
 
 const downloadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 50, // Limit downloads to 50 per 15 minutes
+    max: 1000, // Temporarily increased for testing (was 50)
     message: { error: 'Too many downloads, please try again later.' },
 });
 
