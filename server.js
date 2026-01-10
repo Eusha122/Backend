@@ -24,12 +24,24 @@ const PORT = process.env.PORT || 3001;
 // Middleware
 // Middleware
 const getAllowedOrigins = () => {
-    if (process.env.NODE_ENV === 'production') {
-        // Strip trailing slash from FRONTEND_URL if present
-        const frontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, '') : '';
-        return [frontendUrl];
+    // Always allow the specific Vercel frontend in production as a fallback
+    const allowed = [
+        'https://frontend-gamma-eight-86.vercel.app',
+        'https://sharesafe.vercel.app'
+    ];
+
+    if (process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL) {
+        // Also allow the configured FRONTEND_URL (stripped of trailing slash)
+        allowed.push(process.env.FRONTEND_URL.replace(/\/$/, ''));
     }
-    return ['http://localhost:8080', 'http://localhost:8081', 'http://192.168.0.106:8080', 'http://192.168.0.106:8081'];
+
+    // Add local dev environments
+    allowed.push('http://localhost:8080');
+    allowed.push('http://localhost:8081');
+    allowed.push('http://192.168.0.106:8080'); // Mobile testing
+    allowed.push('http://192.168.0.106:8081');
+
+    return allowed;
 };
 
 app.use(cors({
