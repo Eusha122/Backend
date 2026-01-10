@@ -58,7 +58,10 @@ router.post('/initiate', async (req, res) => {
         });
     } catch (error) {
         console.error('[Multipart Initiate Error]', error);
-        res.status(500).json({ error: 'Failed to initiate multipart upload' });
+        res.status(500).json({
+            error: 'Failed to initiate multipart upload',
+            details: error.message // Expose error for debugging
+        });
     }
 });
 
