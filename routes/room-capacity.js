@@ -36,11 +36,14 @@ router.get('/:roomId', async (req, res) => {
         }
 
         // Count unique IPs (approximate active users)
-        const uniqueIPs = new Set(recentLogs.map(log => log.ip_address));
+        const uniqueIPs = new Set(recentLogs?.map(log => log.ip_address) || []);
         const currentUsers = uniqueIPs.size;
 
+        // Block if adding ONE MORE user would exceed limit
         const isFull = maxUsers < 999 && currentUsers >= maxUsers;
         const isNearFull = maxUsers < 999 && currentUsers >= maxUsers * 0.8;
+
+        console.log(`[Capacity Check] Room: ${roomId}, Current: ${currentUsers}, Max: ${maxUsers}, Full: ${isFull}`);
 
         res.json({
             current: currentUsers,
