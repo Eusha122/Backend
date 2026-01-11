@@ -14,6 +14,7 @@ import roomAccessRoute from './routes/room-access.js';
 import deleteFileRoute from './routes/delete-file.js';
 import deleteRoomRoute from './routes/delete-room.js';
 import roomCapacityRoute from './routes/room-capacity.js';
+import analyticsRoute from './routes/analytics.js'; // [NEW]
 import { cleanupExpiredRooms } from './scripts/cleanup.js';
 
 // Load environment variables
@@ -107,6 +108,7 @@ app.use('/api/room-access', roomAccessRoute);
 app.use('/api/room-capacity', roomCapacityRoute);
 app.use('/api/delete-file', deleteFileRoute);
 app.use('/api/delete-room', deleteRoomRoute);
+app.use('/api/analytics', analyticsRoute); // [NEW] Analytics Route
 
 // Schedule cleanup job (every hour)
 cron.schedule('0 * * * *', () => {
