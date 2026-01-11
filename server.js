@@ -39,8 +39,10 @@ const getAllowedOrigins = () => {
     // Add local dev environments
     allowed.push('http://localhost:8080');
     allowed.push('http://localhost:8081');
+    allowed.push('http://localhost:8082');
     allowed.push('http://192.168.0.106:8080'); // Mobile testing
     allowed.push('http://192.168.0.106:8081');
+    allowed.push('http://192.168.0.106:8082');
 
     return allowed;
 };
@@ -65,7 +67,7 @@ app.use((req, res, next) => {
 // Rate limiting
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
+    max: 500, // Limit each IP to 500 requests per windowMs (increased for room capacity polling)
     message: { error: 'Too many requests from this IP, please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,
@@ -79,24 +81,27 @@ const uploadLimiter = rateLimit({
 
 const downloadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000, // Temporarily increased for testing (was 50)
+    max: 100, // 100 downloads per 15 minutes
     message: { error: 'Too many downloads, please try again later.' },
 });
 
-app.use('/api/', limiter);
+// REMOVED: Global rate limiter was blocking all routes including read-only ones
+// app.use('/api/', limiter); // <-- This was causing BUG 1
 
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes
+// API routes - ONLY apply rate limiting to upload/download routes
 app.use('/api/upload', uploadLimiter, uploadRoute);
-app.use('/api/presigned-upload', presignedUploadRoute); // Direct-to-R2 uploads
+app.use('/api/presigned-upload', uploadLimiter, presignedUploadRoute); // Direct-to-R2 uploads
 app.use('/api/multipart-upload', uploadLimiter, multipartUploadRoute); // Multipart uploads for large files
 app.use('/api/download', downloadLimiter, downloadRoute);
 app.use('/api/preview', downloadLimiter, previewRoutes);
 app.use('/api/bulk-download', downloadLimiter, bulkDownloadRoute);
+
+// Read-only routes - NO rate limiting (these were being blocked by global limiter)
 app.use('/api/access-logs', accessLogsRoute);
 app.use('/api/room-access', roomAccessRoute);
 app.use('/api/room-capacity', roomCapacityRoute);
