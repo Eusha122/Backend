@@ -6,13 +6,13 @@ const router = express.Router();
 // POST /api/room-access - Log when someone accesses a room
 router.post('/', async (req, res) => {
     try {
-        const { roomId } = req.body;
+        const { roomId, sessionId } = req.body;
 
         if (!roomId) {
             return res.status(400).json({ error: 'Missing roomId' });
         }
 
-        await logAccess(roomId, 'room_access', req);
+        await logAccess(roomId, 'room_access', req, sessionId);
 
         res.json({ success: true });
     } catch (error) {

@@ -26,7 +26,7 @@ router.get('/:roomId', async (req, res) => {
 
         const { data: recentLogs, error: logsError } = await supabase
             .from('access_logs')
-            .select('ip_address')
+            .select('ip_address, session_id')
             .eq('room_id', roomId)
             .gte('created_at', fiveMinutesAgo);
 
@@ -35,9 +35,17 @@ router.get('/:roomId', async (req, res) => {
             return res.status(500).json({ error: 'Failed to fetch capacity' });
         }
 
-        // Count unique IPs (approximate active users)
-        const uniqueIPs = new Set(recentLogs?.map(log => log.ip_address) || []);
-        const currentUsers = uniqueIPs.size;
+        // Count unique users (prefer session_id, fallback to ip for backward compatibility)
+        const uniqueUsers = new Set();
+        recentLogs?.forEach(log => {
+            if (log.session_id) {
+                uniqueUsers.add(`s:${log.session_id}`);
+            } else {
+                uniqueUsers.add(`i:${log.ip_address}`);
+            }
+        });
+
+        const currentUsers = uniqueUsers.size;
 
         // Block if adding ONE MORE user would exceed limit
         const isFull = maxUsers < 999 && currentUsers >= maxUsers;
