@@ -7,7 +7,7 @@
     "scripts": {
         "start": "node server.js",
         "dev": "node --watch server.js",
-        "cleanup": "node scripts/cleanup.js"
+        "cleanup": "node -r dotenv/config scripts/cleanup.js"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.705.0",
