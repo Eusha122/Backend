@@ -49,7 +49,27 @@ const getAllowedOrigins = () => {
 };
 
 app.use(cors({
-    origin: getAllowedOrigins(),
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin) return callback(null, true);
+
+        const allowedOrigins = getAllowedOrigins();
+
+        // Check if origin is explicitly allowed
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        }
+
+        // Check if origin is a Vercel preview deployment (any subdomain)
+        // Regex matches https://<anything>.vercel.app
+        const vercelPattern = /^https:\/\/.*\.vercel\.app$/;
+        if (vercelPattern.test(origin)) {
+            return callback(null, true);
+        }
+
+        const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        return callback(new Error(msg), false);
+    },
     credentials: true,
     exposedHeaders: ['ETag'], // Required for multipart uploads to read ETags
 }));
