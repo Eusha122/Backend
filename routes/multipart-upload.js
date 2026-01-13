@@ -181,13 +181,6 @@ router.post('/complete', async (req, res) => {
             fileMetadata.message = message.trim();
         }
 
-        // 🔥 BURN MODE: Set burn flag if room is in burn mode
-        if (room.mode === 'burn') {
-            fileMetadata.burn_after_download = true;
-            fileMetadata.file_status = 'available';
-            console.log(`[Burn Mode] File ${filename} marked for self-destruction after download`);
-        }
-
         const { data: fileData, error: dbError } = await supabase
             .from('files')
             .insert(fileMetadata)
@@ -197,38 +190,6 @@ router.post('/complete', async (req, res) => {
         if (dbError) {
             console.error('[Multipart] Database error:', dbError);
             return res.status(500).json({ error: 'Failed to save file metadata' });
-        }
-
-        // 🔥 BURN MODE: Increment remaining_files counter
-        if (room.mode === 'burn') {
-            try {
-                // Get current count
-                const { data: currentRoom, error: fetchError } = await supabase
-                    .from('rooms')
-                    .select('remaining_files')
-                    .eq('id', roomId)
-                    .single();
-
-                if (fetchError) {
-                    console.error('[Burn Mode] Failed to fetch remaining_files:', fetchError);
-                } else {
-                    const currentCount = currentRoom?.remaining_files || 0;
-                    const newCount = currentCount + 1;
-
-                    const { error: updateError } = await supabase
-                        .from('rooms')
-                        .update({ remaining_files: newCount })
-                        .eq('id', roomId);
-
-                    if (updateError) {
-                        console.error('[Burn Mode] Failed to update remaining_files:', updateError);
-                    } else {
-                        console.log(`[Burn Mode] ✓ Incremented remaining_files for room ${roomId}: ${currentCount} → ${newCount}`);
-                    }
-                }
-            } catch (err) {
-                console.error('[Burn Mode] Error incrementing remaining_files:', err);
-            }
         }
 
         console.log(`[Multipart] File metadata saved with ID: ${fileData.id}`);

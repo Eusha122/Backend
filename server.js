@@ -109,6 +109,8 @@ app.use('/api/room-capacity', roomCapacityRoute);
 app.use('/api/delete-file', deleteFileRoute);
 app.use('/api/delete-room', deleteRoomRoute);
 app.use('/api/analytics', analyticsRoute); // [NEW] Analytics Route
+import updateFileRoute from './routes/update-file.js'; // [NEW]
+app.use('/api/update-file', updateFileRoute); // [NEW]
 
 // Schedule cleanup job (every hour)
 cron.schedule('0 * * * *', () => {

@@ -18,7 +18,8 @@ async function cleanupExpiredRooms() {
         const { data: expiredRooms, error: roomsError } = await supabase
             .from('rooms')
             .select('id, name')
-            .lt('expires_at', new Date().toISOString());
+            .lt('expires_at', new Date().toISOString())
+            .eq('is_permanent', false); // 🛡️ EXEMPT PERMANENT ROOMS
 
         if (roomsError) {
             console.error('[Cleanup] Error fetching expired rooms:', roomsError);
