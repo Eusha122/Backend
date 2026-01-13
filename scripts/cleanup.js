@@ -1,10 +1,60 @@
-import { DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { DeleteObjectCommand, ListMultipartUploadsCommand, AbortMultipartUploadCommand } from '@aws-sdk/client-s3';
 import { r2Client, R2_BUCKET } from '../lib/r2-client.js';
 import { supabase } from '../lib/supabase.js';
 import dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config();
+
+/**
+ * Abort stale multipart uploads that were never completed or canceled correctly.
+ * These "ongoing" uploads consume space but aren't visible as files.
+ */
+async function cleanupIncompleteUploads() {
+    console.log('[Cleanup] Checking for incomplete multipart uploads...');
+
+    try {
+        const listCommand = new ListMultipartUploadsCommand({
+            Bucket: R2_BUCKET,
+        });
+
+        const { Uploads } = await r2Client.send(listCommand);
+
+        if (!Uploads || Uploads.length === 0) {
+            console.log('[Cleanup] No incomplete multipart uploads found.');
+            return;
+        }
+
+        console.log(`[Cleanup] Found ${Uploads.length} ongoing multipart upload(s).`);
+
+        const now = new Date();
+        const STALE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+        for (const upload of Uploads) {
+            const uploadAge = now.getTime() - new Date(upload.Initiated).getTime();
+
+            // Only abort if it's older than our threshold (to avoid killing active uploads)
+            if (uploadAge > STALE_THRESHOLD_MS) {
+                console.log(`[Cleanup] Aborting stale upload: ${upload.Key} (ID: ${upload.UploadId})`);
+
+                try {
+                    await r2Client.send(new AbortMultipartUploadCommand({
+                        Bucket: R2_BUCKET,
+                        Key: upload.Key,
+                        UploadId: upload.UploadId,
+                    }));
+                    console.log(`[Cleanup] ✓ Aborted: ${upload.Key}`);
+                } catch (err) {
+                    console.error(`[Cleanup] ✗ Failed to abort ${upload.Key}:`, err.message);
+                }
+            } else {
+                console.log(`[Cleanup] Skipping active upload: ${upload.Key} (Age: ${Math.round(uploadAge / 3600000)}h)`);
+            }
+        }
+    } catch (error) {
+        console.error('[Cleanup] Error checking multipart uploads:', error);
+    }
+}
 
 /**
  * Cleanup expired rooms and their files
@@ -14,6 +64,9 @@ async function cleanupExpiredRooms() {
     console.log('[Cleanup] Starting cleanup job at', new Date().toISOString());
 
     try {
+        // First, clean up incomplete uploads (ghost files)
+        await cleanupIncompleteUploads();
+
         // Find all expired rooms
         const { data: expiredRooms, error: roomsError } = await supabase
             .from('rooms')
