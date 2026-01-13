@@ -47,6 +47,25 @@ router.get('/', async (req, res) => {
             Key: fileKey,
         });
 
+        // PROXY MODE: Stream the file directly through the backend (bypasses CORS)
+        if (req.query.proxy === 'true') {
+            try {
+                const s3Response = await r2Client.send(command);
+
+                // Set appropriate headers
+                res.setHeader('Content-Type', s3Response.ContentType || 'application/octet-stream');
+                res.setHeader('Content-Length', s3Response.ContentLength);
+
+                // Stream the body
+                s3Response.Body.pipe(res);
+                return;
+            } catch (err) {
+                console.error('[Preview Proxy] Error:', err);
+                return res.status(500).json({ error: 'Failed to stream file' });
+            }
+        }
+
+        // STANDARD MODE: Return signed URL
         const signedUrl = await getSignedUrl(r2Client, command, {
             expiresIn: 300, // 5 minutes
         });
