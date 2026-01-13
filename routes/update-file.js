@@ -1,16 +1,8 @@
 import express from 'express';
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-
-dotenv.config();
+import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// Initialize Supabase client
-const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_KEY
-);
 
 router.patch('/:id', async (req, res) => {
     try {
