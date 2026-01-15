@@ -129,7 +129,7 @@ router.post('/complete', async (req, res) => {
         // Verify room still exists and get mode
         const { data: room, error: roomError } = await supabase
             .from('rooms')
-            .select('id, mode')
+            .select('id, mode, remaining_files')
             .eq('id', roomId)
             .gt('expires_at', new Date().toISOString())
             .single();
@@ -186,6 +186,19 @@ router.post('/complete', async (req, res) => {
             .insert(fileMetadata)
             .select()
             .single();
+
+        if (!dbError) {
+            // Increment remaining_files in rooms table
+            console.log(`[Multipart] Incrementing remaining_files for room ${roomId}`);
+            const { error: incError } = await supabase
+                .from('rooms')
+                .update({ remaining_files: (room.remaining_files || 0) + 1 })
+                .eq('id', roomId);
+
+            if (incError) {
+                console.error('[Multipart] Failed to increment remaining_files:', incError);
+            }
+        }
 
         if (dbError) {
             console.error('[Multipart] Database error:', dbError);
