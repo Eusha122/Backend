@@ -7,16 +7,21 @@ const router = express.Router();
 router.patch('/:id', async (req, res) => {
     try {
         const { id } = req.params;
-        const { target_url } = req.body;
+        const { target_url, description } = req.body;
 
         if (!id) {
             return res.status(400).json({ error: 'File ID is required' });
         }
 
+        // Build update object with only provided fields
+        const updateData = {};
+        if (target_url !== undefined) updateData.target_url = target_url;
+        if (description !== undefined) updateData.description = description;
+
         // Update the file using service key (bypasses RLS)
         const { data, error } = await supabase
             .from('files')
-            .update({ target_url })
+            .update(updateData)
             .eq('id', id)
             .select()
             .single();
