@@ -188,9 +188,25 @@ router.post('/complete', async (req, res) => {
             .single();
 
         if (!dbError) {
-            // Note: remaining_files is auto-incremented by DB trigger 'after_file_insert'
-            // No manual increment needed - trigger handles concurrent uploads atomically
-            console.log(`[Multipart] File saved. DB trigger will increment remaining_files for room ${roomId}`);
+            // Atomic increment using raw SQL to handle concurrent uploads correctly
+            console.log(`[Multipart] Incrementing remaining_files for room ${roomId}`);
+            const { error: incError } = await supabase.rpc('increment_remaining_files', { room_id_input: roomId });
+
+            if (incError) {
+                // Fallback: fetch current value and increment
+                console.warn('[Multipart] RPC failed, using fallback:', incError.message);
+                const { data: currentRoom } = await supabase
+                    .from('rooms')
+                    .select('remaining_files')
+                    .eq('id', roomId)
+                    .single();
+
+                await supabase
+                    .from('rooms')
+                    .update({ remaining_files: (currentRoom?.remaining_files || 0) + 1 })
+                    .eq('id', roomId);
+            }
+            console.log(`[Multipart] remaining_files incremented for room ${roomId}`);
         }
 
         if (dbError) {

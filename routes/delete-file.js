@@ -42,7 +42,25 @@ router.delete('/:fileId', async (req, res) => {
         if (dbError) throw dbError;
 
         console.log(`[Delete] File deleted: ${file.filename}`);
-        // Note: remaining_files is auto-decremented by DB trigger 'after_file_delete'
+
+        // Atomic decrement using RPC function
+        const { error: decError } = await supabase.rpc('decrement_remaining_files', { room_id_input: file.rooms.id });
+
+        if (decError) {
+            // Fallback: fetch and decrement
+            console.warn('[Delete] RPC failed, using fallback:', decError.message);
+            const { data: currentRoom } = await supabase
+                .from('rooms')
+                .select('remaining_files')
+                .eq('id', file.rooms.id)
+                .single();
+
+            await supabase
+                .from('rooms')
+                .update({ remaining_files: Math.max(0, (currentRoom?.remaining_files || 0) - 1) })
+                .eq('id', file.rooms.id);
+        }
+        console.log(`[Delete] remaining_files decremented for room ${file.rooms.id}`);
 
         res.json({ success: true, message: 'File deleted successfully' });
     } catch (error) {
