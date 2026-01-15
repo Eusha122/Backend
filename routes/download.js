@@ -298,4 +298,100 @@ router.post('/end', async (req, res) => {
     }
 });
 
+// POST /api/download/bulk-mark - Mark multiple files as downloaded (for ZIP bulk download)
+router.post('/bulk-mark', async (req, res) => {
+    try {
+        const { roomId, fileIds } = req.body;
+
+        if (!roomId || !fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
+            return res.status(400).json({ error: 'Missing roomId or fileIds' });
+        }
+
+        console.log(`[Bulk Mark] Marking ${fileIds.length} files as downloaded in room ${roomId}`);
+
+        // Get room info
+        const { data: room, error: roomError } = await supabase
+            .from('rooms')
+            .select('mode, status, remaining_files')
+            .eq('id', roomId)
+            .single();
+
+        if (roomError || !room) {
+            return res.status(404).json({ error: 'Room not found' });
+        }
+
+        const isBurnMode = room.mode === 'burn';
+        let filesMarked = 0;
+
+        // Process each file
+        for (const fileId of fileIds) {
+            try {
+                // Increment download_count for each file
+                await supabase
+                    .from('files')
+                    .update({ download_count: supabase.rpc ? 1 : 1 }) // Simple increment
+                    .eq('id', fileId);
+
+                // Decrement remaining_files for burn mode
+                if (isBurnMode) {
+                    const { error: decError } = await supabase.rpc('decrement_remaining_files', { room_id_input: roomId });
+
+                    if (decError) {
+                        // Fallback
+                        const { data: currentRoom } = await supabase
+                            .from('rooms')
+                            .select('remaining_files')
+                            .eq('id', roomId)
+                            .single();
+
+                        await supabase
+                            .from('rooms')
+                            .update({ remaining_files: Math.max(0, (currentRoom?.remaining_files || 0) - 1) })
+                            .eq('id', roomId);
+                    }
+                }
+
+                filesMarked++;
+            } catch (fileError) {
+                console.error(`[Bulk Mark] Failed to mark file ${fileId}:`, fileError);
+            }
+        }
+
+        // Check if all files consumed -> trigger burn mode
+        if (isBurnMode) {
+            const { data: updatedRoom } = await supabase
+                .from('rooms')
+                .select('remaining_files')
+                .eq('id', roomId)
+                .single();
+
+            if (updatedRoom && updatedRoom.remaining_files === 0) {
+                console.log(`[Bulk Mark] 🔥 All files consumed! Starting room termination...`);
+
+                await supabase
+                    .from('rooms')
+                    .update({
+                        status: 'terminating',
+                        termination_started_at: new Date().toISOString()
+                    })
+                    .eq('id', roomId);
+            }
+        }
+
+        // Log bulk download
+        await logAccess(roomId, 'bulk_download', req);
+
+        res.json({
+            success: true,
+            filesMarked,
+            message: `Marked ${filesMarked} files as downloaded`
+        });
+
+    } catch (error) {
+        console.error('[Bulk Mark] Error:', error);
+        res.status(500).json({ error: 'Failed to mark files' });
+    }
+});
+
 export default router;
+
