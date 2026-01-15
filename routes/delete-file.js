@@ -42,21 +42,7 @@ router.delete('/:fileId', async (req, res) => {
         if (dbError) throw dbError;
 
         console.log(`[Delete] File deleted: ${file.filename}`);
-
-        // Decrement remaining_files in rooms table
-        const { data: roomData, error: roomError } = await supabase
-            .from('rooms')
-            .select('remaining_files')
-            .eq('id', file.rooms.id)
-            .single();
-
-        if (!roomError && roomData) {
-            const newCount = Math.max(0, (roomData.remaining_files || 0) - 1);
-            await supabase
-                .from('rooms')
-                .update({ remaining_files: newCount })
-                .eq('id', file.rooms.id);
-        }
+        // Note: remaining_files is auto-decremented by DB trigger 'after_file_delete'
 
         res.json({ success: true, message: 'File deleted successfully' });
     } catch (error) {

@@ -188,16 +188,9 @@ router.post('/complete', async (req, res) => {
             .single();
 
         if (!dbError) {
-            // Increment remaining_files in rooms table
-            console.log(`[Multipart] Incrementing remaining_files for room ${roomId}`);
-            const { error: incError } = await supabase
-                .from('rooms')
-                .update({ remaining_files: (room.remaining_files || 0) + 1 })
-                .eq('id', roomId);
-
-            if (incError) {
-                console.error('[Multipart] Failed to increment remaining_files:', incError);
-            }
+            // Note: remaining_files is auto-incremented by DB trigger 'after_file_insert'
+            // No manual increment needed - trigger handles concurrent uploads atomically
+            console.log(`[Multipart] File saved. DB trigger will increment remaining_files for room ${roomId}`);
         }
 
         if (dbError) {
