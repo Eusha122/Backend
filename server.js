@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import cron from 'node-cron';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import uploadRoute from './routes/upload.js';
 import presignedUploadRoute from './routes/presigned-upload.js';
 import multipartUploadRoute from './routes/multipart-upload.js';
@@ -22,6 +23,9 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// Security headers
+app.use(helmet());
 
 // Middleware
 // Middleware
