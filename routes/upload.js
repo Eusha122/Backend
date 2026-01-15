@@ -164,16 +164,20 @@ router.post('/', upload.single('file'), async (req, res) => {
             console.log(`[Upload] Standard file upload: ${file.originalname}`);
         }
 
-        // Check if room exists and is not expired
+        // Check if room exists (allow expired for permanent rooms)
         const { data: room, error: roomError } = await supabase
             .from('rooms')
-            .select('id, expires_at')
+            .select('id, expires_at, is_permanent')
             .eq('id', roomId)
-            .gt('expires_at', new Date().toISOString())
             .single();
 
         if (roomError || !room) {
-            return res.status(404).json({ error: 'Room not found or expired' });
+            return res.status(404).json({ error: 'Room not found' });
+        }
+
+        // Check expiration (skip for permanent rooms)
+        if (!room.is_permanent && new Date(room.expires_at) < new Date()) {
+            return res.status(410).json({ error: 'Room expired' });
         }
 
         // Generate unique file key

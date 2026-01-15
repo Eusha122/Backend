@@ -18,7 +18,7 @@ router.get('/', async (req, res) => {
         // Validate file exists
         const { data: file, error: fileError } = await supabase
             .from('files')
-            .select('*, rooms!inner(id, expires_at)')
+            .select('*, rooms!inner(id, expires_at, is_permanent)')
             .eq('file_key', fileKey)
             .single();
 
@@ -26,8 +26,8 @@ router.get('/', async (req, res) => {
             return res.status(404).json({ error: 'File not found' });
         }
 
-        // Check if room is expired
-        if (new Date(file.rooms.expires_at) < new Date()) {
+        // Check if room is expired (skip for permanent rooms)
+        if (!file.rooms.is_permanent && new Date(file.rooms.expires_at) < new Date()) {
             return res.status(410).json({ error: 'File expired' });
         }
 
