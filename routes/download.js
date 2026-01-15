@@ -204,7 +204,7 @@ router.get('/', async (req, res) => {
                                         } catch (error) {
                                             console.error(`[🔥 Burn Mode] Room destruction error:`, error);
                                         }
-                                    }, 10000); // 10-second countdown after terminating status
+                                    }, 30000); // 30-second countdown after terminating status
                                 }
                             }
                         }
@@ -212,7 +212,7 @@ router.get('/', async (req, res) => {
                 } catch (error) {
                     console.error(`[🔥 Burn Mode] ✗ File destruction error:`, error);
                 }
-            }, 5000); // 5-second delay for download to complete
+            }, 120000); // 120-second delay for large file download + decryption
         }
 
         res.json({
