@@ -33,7 +33,9 @@ const getAllowedOrigins = () => {
     // Always allow the specific Vercel frontend in production as a fallback
     const allowed = [
         'https://frontend-gamma-eight-86.vercel.app',
-        'https://sharesafe.vercel.app'
+        'https://sharesafe.vercel.app',
+        'https://safeshare.co',
+        'https://www.safeshare.co'
     ];
 
     if (process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL) {
