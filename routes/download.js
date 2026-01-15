@@ -163,11 +163,20 @@ router.get('/', async (req, res) => {
                                             // Final check - room should still be terminating
                                             const { data: roomCheck } = await supabase
                                                 .from('rooms')
-                                                .select('status')
+                                                .select('status, download_in_progress')
                                                 .eq('id', file.rooms.id)
                                                 .single();
 
+
                                             if (roomCheck && roomCheck.status === 'terminating') {
+                                                // 🔥 CHECK DOWNLOAD LOCK: Don't destroy if download in progress
+                                                if (roomCheck.download_in_progress) {
+                                                    console.log(`[🔥 Burn Mode] ⏳ Download in progress, delaying destruction...`);
+                                                    // Re-schedule check in 30 seconds
+                                                    setTimeout(arguments.callee, 30000);
+                                                    return;
+                                                }
+
                                                 // Delete any remaining files from R2 (shouldn't be any, but safety)
                                                 const { data: remainingFiles } = await supabase
                                                     .from('files')
@@ -224,6 +233,68 @@ router.get('/', async (req, res) => {
     } catch (error) {
         console.error('[Download] Error:', error);
         res.status(500).json({ error: 'Failed to generate download URL' });
+    }
+});
+
+// POST /api/download/start - Mark download as started (lock room destruction)
+router.post('/start', async (req, res) => {
+    try {
+        const { roomId, fileId } = req.body;
+
+        if (!roomId) {
+            return res.status(400).json({ error: 'Missing roomId' });
+        }
+
+        console.log(`[Download Lock] 🔒 Download started for room ${roomId}, file ${fileId || 'unknown'}`);
+
+        const { error } = await supabase
+            .from('rooms')
+            .update({
+                download_in_progress: true,
+                last_download_activity: new Date().toISOString()
+            })
+            .eq('id', roomId);
+
+        if (error) {
+            console.error('[Download Lock] Failed to set lock:', error);
+            return res.status(500).json({ error: 'Failed to set download lock' });
+        }
+
+        res.json({ success: true, locked: true });
+    } catch (error) {
+        console.error('[Download Lock] Error:', error);
+        res.status(500).json({ error: 'Internal error' });
+    }
+});
+
+// POST /api/download/end - Mark download as finished (unlock room destruction)
+router.post('/end', async (req, res) => {
+    try {
+        const { roomId, fileId, success } = req.body;
+
+        if (!roomId) {
+            return res.status(400).json({ error: 'Missing roomId' });
+        }
+
+        console.log(`[Download Lock] 🔓 Download ended for room ${roomId}, file ${fileId || 'unknown'}, success: ${success}`);
+
+        const { error } = await supabase
+            .from('rooms')
+            .update({
+                download_in_progress: false,
+                last_download_activity: new Date().toISOString()
+            })
+            .eq('id', roomId);
+
+        if (error) {
+            console.error('[Download Lock] Failed to clear lock:', error);
+            return res.status(500).json({ error: 'Failed to clear download lock' });
+        }
+
+        res.json({ success: true, locked: false });
+    } catch (error) {
+        console.error('[Download Lock] Error:', error);
+        res.status(500).json({ error: 'Internal error' });
     }
 });
 
