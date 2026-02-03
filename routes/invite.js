@@ -47,78 +47,88 @@ const isValidEmail = (email) => {
 const generateEmailHTML = (roomName, roomUrl, authorName) => {
     return `
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Your SafeShare Room Link</title>
+<meta charset="UTF-8">
+<title>SafeShare Invitation</title>
 </head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; background-color: #0a0a0a;">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 600px; margin: 0 auto; background-color: #0a0a0a;">
-        <!-- Header -->
-        <tr>
-            <td style="padding: 40px 30px 20px; text-align: center;">
-                <div style="display: inline-block; padding: 12px 24px; background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); border-radius: 12px;">
-                    <span style="font-size: 24px; font-weight: 700; color: #ffffff; letter-spacing: -0.5px;">SafeShare</span>
-                </div>
-            </td>
-        </tr>
-        
-        <!-- Main Content -->
-        <tr>
-            <td style="padding: 20px 30px;">
-                <div style="background: linear-gradient(145deg, #1a1a1a 0%, #0f0f0f 100%); border: 1px solid #2a2a2a; border-radius: 16px; padding: 32px; text-align: center;">
-                    <h1 style="margin: 0 0 16px; font-size: 24px; font-weight: 600; color: #ffffff;">
-                        You've been invited to a room
-                    </h1>
-                    
-                    <p style="margin: 0 0 24px; font-size: 16px; color: #a1a1a1; line-height: 1.6;">
-                        <strong style="color: #ffffff;">${authorName || 'Someone'}</strong> has shared a secure room with you.
-                    </p>
-                    
-                    <!-- Room Name Badge -->
-                    <div style="display: inline-block; padding: 12px 24px; background-color: #1f1f1f; border: 1px solid #333; border-radius: 8px; margin-bottom: 24px;">
-                        <span style="font-size: 18px; font-weight: 600; color: #22c55e;">${roomName}</span>
-                    </div>
-                    
-                    <!-- CTA Button -->
-                    <div style="margin: 24px 0;">
-                        <a href="${roomUrl}" target="_blank" style="display: inline-block; padding: 16px 32px; background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: #ffffff; text-decoration: none; font-size: 16px; font-weight: 600; border-radius: 10px; box-shadow: 0 4px 14px rgba(34, 197, 94, 0.3);">
-                            Open Secure Room →
-                        </a>
-                    </div>
-                    
-                    <p style="margin: 24px 0 0; font-size: 13px; color: #666; line-height: 1.5;">
-                        If the button doesn't work, copy and paste this link:<br>
-                        <a href="${roomUrl}" style="color: #22c55e; word-break: break-all;">${roomUrl}</a>
-                    </p>
-                </div>
-            </td>
-        </tr>
-        
-        <!-- Security Warning -->
-        <tr>
-            <td style="padding: 0 30px 20px;">
-                <div style="background-color: #1c1917; border: 1px solid #44403c; border-radius: 12px; padding: 16px 20px;">
-                    <p style="margin: 0; font-size: 13px; color: #fbbf24; text-align: center;">
-                        ⚠️ <strong>Security Notice:</strong> Do not share this link publicly. Only forward it to people you trust.
-                    </p>
-                </div>
-            </td>
-        </tr>
-        
-        <!-- Footer -->
-        <tr>
-            <td style="padding: 20px 30px 40px; text-align: center; border-top: 1px solid #1f1f1f;">
-                <p style="margin: 0 0 8px; font-size: 14px; color: #666;">
-                    Sent securely by <strong style="color: #22c55e;">SafeShare</strong>
-                </p>
-                <p style="margin: 0; font-size: 12px; color: #444;">
-                    End-to-end encrypted file sharing
-                </p>
-            </td>
-        </tr>
-    </table>
+
+<body style="margin:0;padding:0;background:#f6f7f9;font-family:Arial,Helvetica,sans-serif">
+
+<table width="100%" cellpadding="0" cellspacing="0">
+<tr>
+<td align="center" style="padding:40px 16px">
+
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.05)">
+
+<!-- Header -->
+<tr>
+<td style="padding:24px 32px;border-bottom:1px solid #eeeeee">
+<h2 style="margin:0;color:#22c55e;font-weight:700">SafeShare</h2>
+</td>
+</tr>
+
+<!-- Content -->
+<tr>
+<td style="padding:32px">
+
+<h1 style="margin-top:0;font-size:22px;color:#111">
+You've been invited to a secure room
+</h1>
+
+<p style="color:#444;font-size:15px;line-height:1.6">
+<strong>${authorName || "Someone"}</strong> shared a room with you:
+</p>
+
+<div style="background:#f3f4f6;padding:14px 18px;border-radius:8px;margin:16px 0;font-weight:600;color:#111">
+${roomName}
+</div>
+
+<a href="${roomUrl}"
+style="
+display:inline-block;
+margin-top:20px;
+padding:14px 24px;
+background:#22c55e;
+color:white;
+text-decoration:none;
+border-radius:8px;
+font-weight:600;
+font-size:15px;
+">
+Open Room
+</a>
+
+<p style="margin-top:24px;font-size:13px;color:#666">
+If the button doesn’t work, copy this link:
+<br>
+<a href="${roomUrl}" style="color:#22c55e">${roomUrl}</a>
+</p>
+
+</td>
+</tr>
+
+<!-- Footer -->
+<tr>
+<td style="padding:20px 32px;border-top:1px solid #eeeeee;font-size:12px;color:#888">
+
+<p style="margin:0">
+⚠ Do not share this link publicly. Only send it to people you trust.
+</p>
+
+<p style="margin-top:10px">
+SafeShare — Secure file sharing platform
+</p>
+
+</td>
+</tr>
+
+</table>
+
+</td>
+</tr>
+</table>
+
 </body>
 </html>
 `;
