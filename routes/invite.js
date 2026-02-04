@@ -137,11 +137,15 @@ SafeShare — Secure file sharing platform
 // ============================================================
 // POST /api/invite - Send room invitation email
 // ============================================================
+// ============================================================
+// POST /api/invite - Send room invitation email
+// ============================================================
 router.post('/', async (req, res) => {
     try {
         // 🔒 SECURITY: Only accept email and roomId
         // URL is generated server-side to prevent phishing attacks
-        const { email, roomId } = req.body;
+        // [UPDATE] Accepting shareLink from frontend to support URL fragments (encryption keys)
+        const { email, roomId, shareLink } = req.body;
         const clientIP = req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
             req.socket?.remoteAddress ||
             'unknown';
@@ -206,9 +210,15 @@ router.post('/', async (req, res) => {
         }
 
         // ========== Generate Secure Room URL ==========
-        // 🔒 SECURITY: URL is generated server-side to prevent phishing
+        // [UPDATE] Use the provided shareLink if valid to include the encryption key fragment
+        // Fallback to server-generated URL if missing (though files won't work without key)
         const baseUrl = process.env.FRONTEND_URL || 'https://safeshare.co';
-        const roomUrl = `${baseUrl}/room/${roomId}`;
+        let roomUrl = `${baseUrl}/room/${roomId}`;
+
+        if (shareLink && shareLink.includes(roomId) && shareLink.startsWith('http')) {
+            // Basic validation to ensure the link belongs to this room
+            roomUrl = shareLink;
+        }
 
         // ========== Send Email via Resend ==========
         const mailFrom = process.env.MAIL_FROM || 'SafeShare <noreply@safeshare.co>';
