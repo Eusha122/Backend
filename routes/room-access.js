@@ -102,11 +102,12 @@ router.get('/activity/:roomId', async (req, res) => {
     try {
         const { roomId } = req.params;
 
-        // Get recent access logs
+        // Get recent access logs (exclude 'leave' events as they create noise on page refresh)
         const { data: logs, error: logsError } = await supabase
             .from('access_logs')
             .select('event_type, device_id, created_at, browser, os, city, country')
             .eq('room_id', roomId)
+            .neq('event_type', 'leave')
             .order('created_at', { ascending: false })
             .limit(50);
 
