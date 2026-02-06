@@ -106,7 +106,7 @@ const limiter = rateLimit({
 
 const uploadLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 1000, // Temporarily increased for testing (was 20)
+    max: 50, // 50 uploads per 15 minutes
     message: { error: 'Too many uploads, please try again later.' },
 });
 
@@ -116,32 +116,51 @@ const downloadLimiter = rateLimit({
     message: { error: 'Too many downloads, please try again later.' },
 });
 
-// REMOVED: Global rate limiter was blocking all routes including read-only ones
-// app.use('/api/', limiter); // <-- This was causing BUG 1
+// === SECURITY: Strict rate limits for abuse-prone routes ===
+const roomAccessLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 5, // 5 requests per minute per IP
+    message: { error: 'Too many access attempts, please wait.' },
+});
+
+const deleteLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 10, // 10 delete attempts per minute per IP
+    message: { error: 'Too many delete attempts, please wait.' },
+});
+
+const presignedUploadLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 presigned URL requests per minute per IP
+    message: { error: 'Too many upload requests, please wait.' },
+});
+// === END SECURITY ===
 
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// API routes - ONLY apply rate limiting to upload/download routes
+// API routes with rate limiting
 app.use('/api/upload', uploadLimiter, uploadRoute);
-app.use('/api/presigned-upload', uploadLimiter, presignedUploadRoute); // Direct-to-R2 uploads
-app.use('/api/multipart-upload', uploadLimiter, multipartUploadRoute); // Multipart uploads for large files
+app.use('/api/presigned-upload', presignedUploadLimiter, presignedUploadRoute); // Strict limit
+app.use('/api/multipart-upload', uploadLimiter, multipartUploadRoute);
 app.use('/api/download', downloadLimiter, downloadRoute);
 app.use('/api/preview', downloadLimiter, previewRoutes);
 app.use('/api/bulk-download', downloadLimiter, bulkDownloadRoute);
 
-// Read-only routes - NO rate limiting (these were being blocked by global limiter)
+// Protected routes with strict rate limits
+app.use('/api/room-access', roomAccessLimiter, roomAccessRoute); // Prevent spam
+app.use('/api/delete-file', deleteLimiter, deleteFileRoute); // Prevent abuse
+app.use('/api/delete-room', deleteLimiter, deleteRoomRoute); // Prevent abuse
+
+// Read-only routes
 app.use('/api/access-logs', accessLogsRoute);
-app.use('/api/room-access', roomAccessRoute);
 app.use('/api/room-capacity', roomCapacityRoute);
-app.use('/api/delete-file', deleteFileRoute);
-app.use('/api/delete-room', deleteRoomRoute);
-app.use('/api/analytics', analyticsRoute); // [NEW] Analytics Route
-import updateFileRoute from './routes/update-file.js'; // [NEW]
-app.use('/api/update-file', updateFileRoute); // [NEW]
-app.use('/api/invite', inviteRoute); // [NEW] Email invite route
+app.use('/api/analytics', analyticsRoute);
+import updateFileRoute from './routes/update-file.js';
+app.use('/api/update-file', updateFileRoute);
+app.use('/api/invite', inviteRoute);
 
 // Schedule cleanup job (every hour)
 cron.schedule('0 * * * *', () => {

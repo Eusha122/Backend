@@ -9,17 +9,30 @@ const router = express.Router();
 router.delete('/:fileId', async (req, res) => {
     try {
         const { fileId } = req.params;
+        const authorToken = req.headers['x-author-token'];
 
-        // Get file info
+        // === SECURITY: Verify author token ===
+        if (!authorToken) {
+            return res.status(403).json({ error: 'Missing authorization token' });
+        }
+
+        // Get file info with room's author_token
         const { data: file, error: fileError } = await supabase
             .from('files')
-            .select('*, rooms!inner(id)')
+            .select('*, rooms!inner(id, author_token)')
             .eq('id', fileId)
             .single();
 
         if (fileError || !file) {
             return res.status(404).json({ error: 'File not found' });
         }
+
+        // Verify author token matches the room's token
+        if (file.rooms.author_token !== authorToken) {
+            console.warn(`[Delete File] Invalid token attempt for file ${fileId.substring(0, 8)}...`);
+            return res.status(403).json({ error: 'Invalid authorization token' });
+        }
+        // === END SECURITY ===
 
         // Delete from R2
         try {
@@ -64,9 +77,10 @@ router.delete('/:fileId', async (req, res) => {
 
         res.json({ success: true, message: 'File deleted successfully' });
     } catch (error) {
-        console.error('Error deleting file:', error);
-        res.status(500).json({ error: 'Failed to delete file' });
+        console.error('[Delete File] Error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
 export default router;
+

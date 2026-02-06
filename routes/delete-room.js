@@ -9,6 +9,29 @@ const router = express.Router();
 router.delete('/:roomId', async (req, res) => {
     try {
         const { roomId } = req.params;
+        const authorToken = req.headers['x-author-token'];
+
+        // === SECURITY: Verify author token ===
+        if (!authorToken) {
+            return res.status(403).json({ error: 'Missing authorization token' });
+        }
+
+        // Get room and verify author token
+        const { data: room, error: roomFetchError } = await supabase
+            .from('rooms')
+            .select('id, author_token')
+            .eq('id', roomId)
+            .single();
+
+        if (roomFetchError || !room) {
+            return res.status(404).json({ error: 'Room not found' });
+        }
+
+        if (room.author_token !== authorToken) {
+            console.warn(`[Delete Room] Invalid token attempt for room ${roomId.substring(0, 8)}...`);
+            return res.status(403).json({ error: 'Invalid authorization token' });
+        }
+        // === END SECURITY ===
 
         // Get all files in the room
         const { data: files, error: filesError } = await supabase
@@ -51,9 +74,10 @@ router.delete('/:roomId', async (req, res) => {
             filesDeleted: files?.length || 0
         });
     } catch (error) {
-        console.error('Error deleting room:', error);
-        res.status(500).json({ error: 'Failed to delete room' });
+        console.error('[Delete Room] Error:', error);
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
 export default router;
+

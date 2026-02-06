@@ -32,6 +32,18 @@ router.post('/presence', async (req, res) => {
             return res.status(400).json({ error: 'Missing roomId or deviceId' });
         }
 
+        // === SECURITY: Verify room exists before allowing presence update ===
+        const { data: room, error: roomError } = await supabase
+            .from('rooms')
+            .select('id')
+            .eq('id', roomId)
+            .single();
+
+        if (roomError || !room) {
+            return res.status(404).json({ error: 'Room not found' });
+        }
+        // === END SECURITY ===
+
         // Atomic user number assignment (prevents race condition)
         await supabase.rpc('assign_user_number', {
             p_room_id: roomId,
@@ -49,13 +61,13 @@ router.post('/presence', async (req, res) => {
 
         if (error) {
             console.error('[Presence] Upsert error:', error);
-            return res.status(500).json({ error: 'Failed to update presence' });
+            return res.status(500).json({ error: 'Internal server error' });
         }
 
         res.json({ success: true });
     } catch (error) {
         console.error('[Presence] Error:', error);
-        res.status(500).json({ error: 'Failed to update presence' });
+        res.status(500).json({ error: 'Internal server error' });
     }
 });
 
