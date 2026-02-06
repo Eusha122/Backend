@@ -56,8 +56,11 @@ router.get('/', async (req, res) => {
             });
         }
 
-        // Log file download
-        await logAccess(file.rooms.id, 'file_download', req);
+        // Extract deviceId from header for tracking
+        const deviceId = req.headers['x-device-id'] || null;
+
+        // Log file download with device tracking
+        await logAccess(file.rooms.id, 'file_download', req, null, deviceId);
 
         // Increment download count BEFORE generating signed URL
         const newDownloadCount = file.download_count + 1;
@@ -378,8 +381,9 @@ router.post('/bulk-mark', async (req, res) => {
             }
         }
 
-        // Log bulk download
-        await logAccess(roomId, 'bulk_download', req);
+        // Log bulk download with device tracking
+        const deviceId = req.headers['x-device-id'] || req.body.deviceId || null;
+        await logAccess(roomId, 'bulk_download', req, null, deviceId);
 
         res.json({
             success: true,
