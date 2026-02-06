@@ -25,6 +25,9 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
+// Trust proxy for correct IP detection behind Vercel/Nginx
+app.set('trust proxy', true);
+
 // Security headers
 app.use(helmet());
 
