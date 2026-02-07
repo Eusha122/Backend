@@ -19,6 +19,24 @@ router.post('/', async (req, res) => {
             return res.json({ success: true, skipped: 'author' });
         }
 
+        // === FIX: DEDUPLICATE - Only log ONCE per device per room ===
+        // Check if this device has already logged a room_access event
+        if (deviceId) {
+            const { data: existingLog } = await supabase
+                .from('access_logs')
+                .select('id')
+                .eq('room_id', roomId)
+                .eq('device_id', deviceId)
+                .eq('event_type', 'room_access')
+                .limit(1)
+                .single();
+
+            if (existingLog) {
+                // Already logged for this device - skip duplicate
+                return res.json({ success: true, skipped: 'duplicate' });
+            }
+        }
+
         // Assign user number BEFORE logging so logs show "Guest X" instead of "Unknown"
         if (deviceId) {
             try {
@@ -32,7 +50,7 @@ router.post('/', async (req, res) => {
             }
         }
 
-        // Log access with device info (receivers only)
+        // Log access with device info (receivers only, first time only)
         await logAccess(roomId, 'room_access', req, sessionId, deviceId);
 
         res.json({ success: true });
