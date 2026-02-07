@@ -18,6 +18,7 @@ import deleteRoomRoute from './routes/delete-room.js';
 import roomCapacityRoute from './routes/room-capacity.js';
 import analyticsRoute from './routes/analytics.js';
 import inviteRoute from './routes/invite.js';
+import verifyAuthorRoute from './routes/verify-author.js';
 import { cleanupExpiredRooms } from './scripts/cleanup.js';
 
 const app = express();
@@ -171,6 +172,7 @@ app.use('/api/analytics', analyticsRoute);
 import updateFileRoute from './routes/update-file.js';
 app.use('/api/update-file', updateFileRoute);
 app.use('/api/invite', inviteRoute);
+app.use('/api/verify-author', verifyAuthorRoute);
 
 // Schedule cleanup job (every hour)
 cron.schedule('0 * * * *', () => {
