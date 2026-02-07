@@ -5,28 +5,25 @@
  * ⚠️ WARNING: This is IRREVERSIBLE!
  */
 
-import dotenv from 'dotenv';
 import { S3Client, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
+import { config } from './lib/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load environment variables
-dotenv.config({ path: join(__dirname, '.env') });
-
 // Initialize R2 client
 const r2Client = new S3Client({
     region: 'auto',
-    endpoint: process.env.R2_ENDPOINT,
+    endpoint: config.r2.endpoint,
     credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        accessKeyId: config.r2.accessKeyId,
+        secretAccessKey: config.r2.secretAccessKey,
     },
 });
 
-const BUCKET_NAME = process.env.R2_BUCKET || 'upshares-files';
+const BUCKET_NAME = config.r2.bucket;
 
 async function deleteAllFromR2() {
     console.log('\n╔════════════════════════════════════════════════════════╗');

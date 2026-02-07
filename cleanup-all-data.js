@@ -8,31 +8,28 @@
  * ⚠️ WARNING: This is IRREVERSIBLE! All data will be permanently deleted.
  */
 
-import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { S3Client, ListObjectsV2Command, DeleteObjectsCommand } from '@aws-sdk/client-s3';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { dirname } from 'path';
+import { config } from './lib/config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load environment variables
-dotenv.config({ path: join(__dirname, '.env') });
-
 // Initialize Supabase
 const supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
+    config.supabaseUrl,
+    config.supabaseServiceKey
 );
 
 // Initialize R2 client
 const r2Client = new S3Client({
     region: 'auto',
-    endpoint: process.env.R2_ENDPOINT,
+    endpoint: config.r2.endpoint,
     credentials: {
-        accessKeyId: process.env.R2_ACCESS_KEY_ID,
-        secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+        accessKeyId: config.r2.accessKeyId,
+        secretAccessKey: config.r2.secretAccessKey,
     },
 });
 
@@ -46,7 +43,7 @@ async function deleteAllFromR2() {
         do {
             // List objects
             const listCommand = new ListObjectsV2Command({
-                Bucket: process.env.R2_BUCKET,
+                Bucket: config.r2.bucket,
                 ContinuationToken: continuationToken,
             });
 
@@ -61,7 +58,7 @@ async function deleteAllFromR2() {
             const objectsToDelete = listResponse.Contents.map(obj => ({ Key: obj.Key }));
 
             const deleteCommand = new DeleteObjectsCommand({
-                Bucket: process.env.R2_BUCKET,
+                Bucket: config.r2.bucket,
                 Delete: {
                     Objects: objectsToDelete,
                 },

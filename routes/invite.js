@@ -1,11 +1,12 @@
 import express from 'express';
 import { Resend } from 'resend';
 import { supabase } from '../lib/supabase.js';
+import { config } from '../lib/config.js';
 
 const router = express.Router();
 
 // Initialize Resend client
-const resend = new Resend(process.env.RESEND_API_KEY);
+const resend = new Resend(config.resendApiKey);
 
 // ============================================================
 // Rate Limiting Storage (in-memory for simplicity)
@@ -51,7 +52,7 @@ const generateEmailHTML = (roomName, roomUrl, authorName) => {
     // HSL(173, 65%, 50%) -> #2EC4B6
     const primaryGradient = 'linear-gradient(135deg, #2A9D8F, #2EC4B6)';
     const primaryColor = '#2A9D8F';
-    const logoUrl = `${process.env.FRONTEND_URL || 'https://safeshare.co'}/icon.png`;
+    const logoUrl = `${config.frontendUrl}/icon.png`;
 
     return `
 <!DOCTYPE html>

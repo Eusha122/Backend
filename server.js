@@ -1,6 +1,7 @@
+import { config } from './config.js';
+
 import express from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import cron from 'node-cron';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
@@ -15,18 +16,16 @@ import roomAccessRoute from './routes/room-access.js';
 import deleteFileRoute from './routes/delete-file.js';
 import deleteRoomRoute from './routes/delete-room.js';
 import roomCapacityRoute from './routes/room-capacity.js';
-import analyticsRoute from './routes/analytics.js'; // [NEW]
-import inviteRoute from './routes/invite.js'; // [NEW] Email invite
+import analyticsRoute from './routes/analytics.js';
+import inviteRoute from './routes/invite.js';
 import { cleanupExpiredRooms } from './scripts/cleanup.js';
 
-// Load environment variables
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = config.port;
 
 // Trust proxy for correct IP detection behind Vercel/Nginx
-app.set('trust proxy', true);
+// Important: This should be set BEFORE initializing rate limiters
+app.set('trust proxy', 1);
 
 // Security headers
 app.use(helmet());
@@ -42,9 +41,9 @@ const getAllowedOrigins = () => {
         'https://www.safeshare.co'
     ];
 
-    if (process.env.NODE_ENV === 'production' && process.env.FRONTEND_URL) {
+    if (config.nodeEnv === 'production' && config.frontendUrl) {
         // Also allow the configured FRONTEND_URL (stripped of trailing slash)
-        allowed.push(process.env.FRONTEND_URL.replace(/\/$/, ''));
+        allowed.push(config.frontendUrl.replace(/\/$/, ''));
     }
 
     // Add local dev environments
@@ -189,7 +188,7 @@ app.use((err, req, res, next) => {
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`🚀 ShareSafe Backend running on http://localhost:${PORT}`);
+    console.log(`🚀 ShareSafe Backend running on port ${PORT}`);
     console.log(`📅 Cleanup job scheduled (runs every hour)`);
-    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`🌍 Environment: ${config.nodeEnv}`);
 });
