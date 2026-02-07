@@ -45,10 +45,13 @@ router.post('/presence', async (req, res) => {
         // === END SECURITY ===
 
         // Atomic user number assignment (prevents race condition)
-        await supabase.rpc('assign_user_number', {
-            p_room_id: roomId,
-            p_device_id: deviceId
-        });
+        // Authors do NOT get a user number - they don't consume capacity slots
+        if (!isAuthor) {
+            await supabase.rpc('assign_user_number', {
+                p_room_id: roomId,
+                p_device_id: deviceId
+            });
+        }
 
         // Upsert presence (update last_seen_at if exists)
         const { error } = await supabase.from('room_presence').upsert({
