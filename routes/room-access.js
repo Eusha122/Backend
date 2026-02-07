@@ -13,9 +13,14 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Missing roomId' });
         }
 
-        // === FIX: Assign user number BEFORE logging so logs show "Guest X" instead of "Unknown" ===
-        // Authors don't get a user number (they don't consume capacity slots)
-        if (!isAuthor && deviceId) {
+        // === FIX: Authors are INVISIBLE - don't log access or assign user numbers ===
+        // Only receivers should appear in access logs and capacity counts
+        if (isAuthor) {
+            return res.json({ success: true, skipped: 'author' });
+        }
+
+        // Assign user number BEFORE logging so logs show "Guest X" instead of "Unknown"
+        if (deviceId) {
             try {
                 await supabase.rpc('assign_user_number', {
                     p_room_id: roomId,
@@ -27,7 +32,7 @@ router.post('/', async (req, res) => {
             }
         }
 
-        // Log access with device info
+        // Log access with device info (receivers only)
         await logAccess(roomId, 'room_access', req, sessionId, deviceId);
 
         res.json({ success: true });
