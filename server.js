@@ -123,6 +123,13 @@ const roomAccessLimiter = rateLimit({
     message: { error: 'Too many access attempts, please wait.' },
 });
 
+// Separate, more lenient limiter for presence heartbeats (sent every 10s)
+const presenceLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 requests per minute per IP (allows 10s heartbeats)
+    message: { error: 'Too many presence updates, please wait.' },
+});
+
 const deleteLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
     max: 10, // 10 delete attempts per minute per IP
@@ -150,7 +157,11 @@ app.use('/api/preview', downloadLimiter, previewRoutes);
 app.use('/api/bulk-download', downloadLimiter, bulkDownloadRoute);
 
 // Protected routes with strict rate limits
-app.use('/api/room-access', roomAccessLimiter, roomAccessRoute); // Prevent spam
+// Presence heartbeat + leave need higher limits (sent every 10s per client)
+app.use('/api/room-access/presence', presenceLimiter, roomAccessRoute);
+app.use('/api/room-access/leave', presenceLimiter, roomAccessRoute);
+// Other room-access endpoints use strict limiter
+app.use('/api/room-access', roomAccessLimiter, roomAccessRoute);
 app.use('/api/delete-file', deleteLimiter, deleteFileRoute); // Prevent abuse
 app.use('/api/delete-room', deleteLimiter, deleteRoomRoute); // Prevent abuse
 
