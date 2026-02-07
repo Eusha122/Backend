@@ -13,6 +13,20 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Missing roomId' });
         }
 
+        // === FIX: Assign user number BEFORE logging so logs show "Guest X" instead of "Unknown" ===
+        // Authors don't get a user number (they don't consume capacity slots)
+        if (!isAuthor && deviceId) {
+            try {
+                await supabase.rpc('assign_user_number', {
+                    p_room_id: roomId,
+                    p_device_id: deviceId
+                });
+            } catch (err) {
+                console.error('[Room Access] Failed to assign user number:', err);
+                // Non-fatal - continue logging
+            }
+        }
+
         // Log access with device info
         await logAccess(roomId, 'room_access', req, sessionId, deviceId);
 
