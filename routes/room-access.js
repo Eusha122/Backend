@@ -137,15 +137,32 @@ router.get('/activity/:roomId', async (req, res) => {
             .select('device_id, user_number')
             .eq('room_id', roomId);
 
+        // Get author device ID(s) from presence history (even if they left)
+        const { data: authorPresence } = await supabase
+            .from('room_presence')
+            .select('device_id')
+            .eq('room_id', roomId)
+            .eq('is_author', true);
+
+        const authorDeviceIds = new Set(authorPresence?.map(a => a.device_id) || []);
+
         // Create lookup map
         const deviceToNumber = Object.fromEntries(
             userMap?.map(u => [u.device_id, u.user_number]) || []
         );
 
-        // Format activities with "Guest X" labels
+        // Format activities with "Guest X" or "Author" labels
         const activities = logs?.map(log => {
-            const guestNumber = deviceToNumber[log.device_id];
-            const label = guestNumber ? `Guest ${guestNumber}` : 'Unknown';
+            let label = 'Unknown';
+
+            if (authorDeviceIds.has(log.device_id)) {
+                label = 'Author';
+            } else {
+                const guestNumber = deviceToNumber[log.device_id];
+                if (guestNumber) {
+                    label = `Guest ${guestNumber}`;
+                }
+            }
 
             let action;
             switch (log.event_type) {
