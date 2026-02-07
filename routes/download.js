@@ -59,8 +59,24 @@ router.get('/', async (req, res) => {
         // Extract deviceId from header for tracking
         const deviceId = req.headers['x-device-id'] || null;
 
-        // Log file download with device tracking
-        await logAccess(file.rooms.id, 'file_download', req, null, deviceId);
+        // Resolve guest number if deviceId is present
+        let guestNumber = null;
+        if (deviceId) {
+            try {
+                // We use the idempotent assign_user_number to get/ensure the number exists
+                const { data } = await supabase.rpc('assign_user_number', {
+                    p_room_id: file.rooms.id,
+                    p_device_id: deviceId
+                });
+                guestNumber = data;
+            } catch (err) {
+                console.error('[Download] Failed to resolve guest number:', err);
+                // Non-fatal, will log as Unknown or just device_id
+            }
+        }
+
+        // Log file download with device tracking and resolved guest number
+        await logAccess(file.rooms.id, 'file_download', req, null, deviceId, guestNumber);
 
         // Increment download count BEFORE generating signed URL
         const newDownloadCount = file.download_count + 1;

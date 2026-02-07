@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// POST /api/room-access - Log when someone accesses a room (existing)
+// POST /api/room-access - Log when someone accesses a room (join event)
 router.post('/', async (req, res) => {
     try {
         const { roomId, sessionId, deviceId, isAuthor } = req.body;
@@ -13,47 +13,64 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ error: 'Missing roomId' });
         }
 
-        // === FIX: Authors are INVISIBLE - don't log access or assign user numbers ===
-        // Only receivers should appear in access logs and capacity counts
+        // 1. Authors are INVISIBLE in access logs and capacity
+        // They do not consume a seat and are not tracked as guests.
         if (isAuthor) {
             return res.json({ success: true, skipped: 'author' });
         }
 
-        // === FIX: DEDUPLICATE - Only log ONCE per device per room ===
-        // Check if this device has already logged a room_access event
-        if (deviceId) {
-            const { data: existingLog } = await supabase
-                .from('access_logs')
-                .select('id')
-                .eq('room_id', roomId)
-                .eq('device_id', deviceId)
-                .eq('event_type', 'room_access')
-                .limit(1)
-                .single();
-
-            if (existingLog) {
-                // Already logged for this device - skip duplicate
-                return res.json({ success: true, skipped: 'duplicate' });
-            }
+        if (!deviceId) {
+            return res.status(400).json({ error: 'Missing deviceId' });
         }
 
-        // Assign user number BEFORE logging so logs show "Guest X" instead of "Unknown"
-        if (deviceId) {
-            try {
-                await supabase.rpc('assign_user_number', {
-                    p_room_id: roomId,
-                    p_device_id: deviceId
-                });
-            } catch (err) {
-                console.error('[Room Access] Failed to assign user number:', err);
-                // Non-fatal - continue logging
-            }
+        // 2. Assign Guest Number (Idempotent RPC)
+        // This must happen BEFORE logging to ensure we have a stable guest number.
+        // The RPC handles concurrency and ensures same device = same number.
+        let guestNumber = null;
+        try {
+            const { data, error } = await supabase.rpc('assign_user_number', {
+                p_room_id: roomId,
+                p_device_id: deviceId
+            });
+
+            if (error) throw error;
+            guestNumber = data;
+        } catch (err) {
+            console.error('[Room Access] Failed to assign user number:', err);
+            // We continue even if assignment fails, but log error
         }
 
-        // Log access with device info (receivers only, first time only)
-        await logAccess(roomId, 'room_access', req, sessionId, deviceId);
+        // 3. Log Access Event (Deduplicated)
+        // Check if this device has ANY access log for this room already
+        // We only want to log "Guest X joined" ONCE per device per room lifetime
+        const { data: existingLog } = await supabase
+            .from('access_logs')
+            .select('id')
+            .eq('room_id', roomId)
+            .eq('device_id', deviceId)
+            .eq('event_type', 'room_access')
+            .limit(1)
+            .single();
 
-        res.json({ success: true });
+        if (!existingLog) {
+            // No previous log found -> Log the "Joined" event
+            await logAccess(roomId, 'room_access', req, sessionId, deviceId, guestNumber);
+        } else {
+            // Already logged -> Skip duplicate log
+        }
+
+        // 4. Update Presence (Immediate Heartbeat)
+        // We also treat this join request as an immediate heartbeat to mark them active
+        await supabase
+            .from('room_presence')
+            .upsert({
+                room_id: roomId,
+                device_id: deviceId,
+                last_seen: new Date().toISOString(),
+                is_author: false
+            }, { onConflict: 'room_id, device_id' });
+
+        res.json({ success: true, guestNumber });
     } catch (error) {
         console.error('Error logging room access:', error);
         res.status(500).json({ error: 'Failed to log access' });

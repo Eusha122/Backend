@@ -21,16 +21,19 @@ router.get('/:roomId', async (req, res) => {
 
         const maxUsers = room.max_concurrent_users || 999; // Default to unlimited
 
-        // Count TOTAL UNIQUE users (permanent slots) from room_user_index
-        // This tracks all users who have EVER joined, not just currently active ones
-        // Note: Authors are NOT counted towards the limit (they use is_author flag in presence)
+        // Count ACTIVE users from room_presence (heartbeats within last 2 minutes)
+        // This tracks concurrent users.
+        const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+
         const { count, error: countError } = await supabase
-            .from('room_user_index')
-            .select('*', { count: 'exact', head: true })
-            .eq('room_id', roomId);
+            .from('room_presence')
+            .select('device_id', { count: 'exact', head: true })
+            .eq('room_id', roomId)
+            .eq('is_author', false) // Exclude authors from capacity
+            .gt('last_seen', twoMinutesAgo);
 
         if (countError) {
-            console.error('Error counting unique users:', countError);
+            console.error('Error counting active users:', countError);
             return res.status(500).json({ error: 'Failed to fetch capacity' });
         }
 
