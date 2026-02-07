@@ -14,17 +14,17 @@ const router = express.Router();
 
 const HIGH_RISK_EXTENSIONS = [
     '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-    '.msi', '.app', '.deb', '.rpm', '.sh', '.run', '.dll', '.sys'
+    '.msi', '.app', '.deb', '.rpm', '.sh', '.run', '.dll', '.sys', '.ps1'
 ];
 
 function assessFileRisk(filename, mimetype) {
     const ext = filename.toLowerCase().substring(filename.lastIndexOf('.'));
 
-    // Check for high-risk extensions (BLOCK THEM)
+    // Check for high-risk extensions (mark as dangerous, not blocked)
     if (HIGH_RISK_EXTENSIONS.includes(ext)) {
         return {
-            status: 'blocked',
-            reason: `File type not allowed (${ext})`,
+            status: 'dangerous',
+            reason: `Executable file (${ext}) - may be harmful`,
             extension: ext
         };
     }
@@ -35,8 +35,8 @@ function assessFileRisk(filename, mimetype) {
         const secondToLast = '.' + parts[parts.length - 2];
         if (HIGH_RISK_EXTENSIONS.includes(secondToLast)) {
             return {
-                status: 'blocked',
-                reason: 'Double extension detected',
+                status: 'dangerous',
+                reason: 'Double extension detected - may be disguised malware',
                 extension: secondToLast
             };
         }
@@ -153,22 +153,13 @@ router.post('/', upload.single('file'), async (req, res) => {
         }
 
         // ============================================
-        // Initial Risk Assessment (NO BLOCKING - informational only)
-        // ============================================
         // Initial Risk Assessment
+        // ============================================
         const riskAssessment = assessFileRisk(file.originalname, file.mimetype);
         const initialScanStatus = riskAssessment.status;
 
-        // BLOCK dangerous files immediately
-        if (initialScanStatus === 'blocked') {
-            return res.status(400).json({
-                error: 'File type not allowed',
-                reason: riskAssessment.reason
-            });
-        }
-
-        if (initialScanStatus === 'risky') {
-            console.warn(`[Upload] ⚠️ Risky file uploaded: ${file.originalname}`);
+        if (initialScanStatus === 'dangerous') {
+            console.warn(`[Upload] ⚠️ DANGEROUS file uploaded: ${file.originalname} - ${riskAssessment.reason}`);
         } else {
             console.log(`[Upload] Standard file upload: ${file.originalname}`);
         }

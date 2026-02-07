@@ -45,64 +45,96 @@ const isValidEmail = (email) => {
 // HTML Email Template
 // ============================================================
 const generateEmailHTML = (roomName, roomUrl, authorName) => {
+    // 🎨 DESIGN SYSTEM TOKENS
+    // Primary Gradient: Linear gradient matching the website's primary theme
+    // HSL(173, 58%, 39%) -> #2A9D8F
+    // HSL(173, 65%, 50%) -> #2EC4B6
+    const primaryGradient = 'linear-gradient(135deg, #2A9D8F, #2EC4B6)';
+    const primaryColor = '#2A9D8F';
+    const logoUrl = `${process.env.FRONTEND_URL || 'https://safeshare.co'}/icon.png`;
+
     return `
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SafeShare Invitation</title>
 </head>
 
-<body style="margin:0;padding:0;background:#f6f7f9;font-family:Arial,Helvetica,sans-serif">
+<body style="margin:0;padding:0;background:#f6f7f9;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
 
-<table width="100%" cellpadding="0" cellspacing="0">
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation">
 <tr>
-<td align="center" style="padding:40px 16px">
+<td align="center" style="padding:40px 16px;">
 
-<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,0.05)">
+<table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,0.08);overflow:hidden;max-width:100%;">
 
-<!-- Header -->
+<!-- Header with Gradient -->
 <tr>
-<td style="padding:24px 32px;border-bottom:1px solid #eeeeee">
-<h2 style="margin:0;color:#22c55e;font-weight:700">SafeShare</h2>
+<td align="center" style="padding:40px 32px;background:${primaryGradient};background-image:${primaryGradient};">
+    <table cellpadding="0" cellspacing="0" role="presentation">
+        <tr>
+            <td align="center">
+                <img src="${logoUrl}" alt="SafeShare Logo" width="48" height="48" style="display:block;width:48px;height:48px;border-radius:12px;box-shadow:0 4px 12px rgba(0,0,0,0.15);">
+                <h1 style="margin:16px 0 0 0;font-size:24px;color:#ffffff;font-weight:700;letter-spacing:-0.5px;">SafeShare</h1>
+            </td>
+        </tr>
+    </table>
 </td>
 </tr>
 
 <!-- Content -->
 <tr>
-<td style="padding:32px">
+<td style="padding:40px 32px;">
 
-<h1 style="margin-top:0;font-size:22px;color:#111">
-You've been invited to a secure room
-</h1>
+<h2 style="margin-top:0;margin-bottom:24px;font-size:20px;color:#111827;text-align:center;font-weight:600;">
+    You've been invited to a secure room
+</h2>
 
-<p style="color:#444;font-size:15px;line-height:1.6">
-<strong>${authorName || "Someone"}</strong> shared a room with you:
+<p style="color:#4b5563;font-size:16px;line-height:1.6;text-align:center;margin-bottom:32px;">
+    <strong>${authorName || "Someone"}</strong> has shared a secure room with you using SafeShare's end-to-end encrypted platform.
 </p>
 
-<div style="background:#f3f4f6;padding:14px 18px;border-radius:8px;margin:16px 0;font-weight:600;color:#111">
-${roomName}
+<!-- Room Card -->
+<div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:24px;margin-bottom:32px;text-align:center;">
+    <p style="margin:0;font-size:12px;text-transform:uppercase;letter-spacing:1px;color:#6b7280;font-weight:600;margin-bottom:8px;">Room Name</p>
+    <div style="font-size:18px;font-weight:600;color:#111827;">${roomName}</div>
 </div>
 
-<a href="${roomUrl}"
-style="
-display:inline-block;
-margin-top:20px;
-padding:14px 24px;
-background:#22c55e;
-color:white;
-text-decoration:none;
-border-radius:8px;
-font-weight:600;
-font-size:15px;
-">
-Open Room
-</a>
+<!-- CTA Button -->
+<table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+    <tr>
+        <td align="center">
+            <a href="${roomUrl}"
+                style="
+                display:inline-block;
+                padding:16px 32px;
+                background:${primaryColor}; /* Fallback */
+                background-image:${primaryGradient};
+                color:white;
+                text-decoration:none;
+                border-radius:12px;
+                font-weight:600;
+                font-size:16px;
+                box-shadow:0 4px 12px rgba(42, 157, 143, 0.3);
+                transition: transform 0.2s;
+                text-align:center;
+                mso-padding-alt:0;
+                text-underline-color:#ffffff;
+                ">
+                <!--[if mso]><i style="letter-spacing: 32px;mso-font-width:-100%;mso-text-raise:30pt">&nbsp;</i><![endif]-->
+                <span style="mso-text-raise:15pt;">Open Secure Room</span>
+                <!--[if mso]><i style="letter-spacing: 32px;mso-font-width:-100%">&nbsp;</i><![endif]-->
+            </a>
+        </td>
+    </tr>
+</table>
 
-<p style="margin-top:24px;font-size:13px;color:#666">
-If the button doesn’t work, copy this link:
-<br>
-<a href="${roomUrl}" style="color:#22c55e">${roomUrl}</a>
+<p style="margin-top:32px;font-size:13px;color:#6b7280;text-align:center;">
+    If the button doesn't work, copy this link:
+    <br>
+    <a href="${roomUrl}" style="color:${primaryColor};word-break:break-all;">${roomUrl}</a>
 </p>
 
 </td>
@@ -110,16 +142,19 @@ If the button doesn’t work, copy this link:
 
 <!-- Footer -->
 <tr>
-<td style="padding:20px 32px;border-top:1px solid #eeeeee;font-size:12px;color:#888">
-
-<p style="margin:0">
-⚠ Do not share this link publicly. Only send it to people you trust.
-</p>
-
-<p style="margin-top:10px">
-SafeShare — Secure file sharing platform
-</p>
-
+<td style="padding:24px 32px;border-top:1px solid #f3f4f6;background-color:#f9fafb;">
+    <table width="100%" cellpadding="0" cellspacing="0" role="presentation">
+        <tr>
+            <td align="center" style="font-size:12px;color:#9ca3af;line-height:1.5;">
+                <p style="margin:0;margin-bottom:8px;">
+                     🔒 Secured by End-to-End Encryption
+                </p>
+                <p style="margin:0;">
+                    © ${new Date().getFullYear()} SafeShare — Secure file sharing platform
+                </p>
+            </td>
+        </tr>
+    </table>
 </td>
 </tr>
 
@@ -131,7 +166,7 @@ SafeShare — Secure file sharing platform
 
 </body>
 </html>
-`;
+    `;
 };
 
 // ============================================================

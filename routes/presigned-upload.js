@@ -7,10 +7,10 @@ import crypto from 'crypto';
 
 const router = express.Router();
 
-// High-risk file extensions (for risk assessment)
+// High-risk file extensions (mark as dangerous, allow upload)
 const HIGH_RISK_EXTENSIONS = [
     '.exe', '.bat', '.cmd', '.com', '.pif', '.scr', '.vbs', '.js', '.jar',
-    '.msi', '.app', '.deb', '.rpm', '.sh', '.run'
+    '.msi', '.app', '.deb', '.rpm', '.sh', '.run', '.dll', '.sys', '.ps1'
 ];
 
 function assessFileRisk(filename, mimetype) {
@@ -18,8 +18,8 @@ function assessFileRisk(filename, mimetype) {
 
     if (HIGH_RISK_EXTENSIONS.includes(ext)) {
         return {
-            status: 'risky',
-            reason: `Executable file (${ext}) - proceed with caution`,
+            status: 'dangerous',
+            reason: `Executable file (${ext}) - may be harmful`,
             extension: ext
         };
     }
@@ -29,8 +29,8 @@ function assessFileRisk(filename, mimetype) {
         const secondToLast = '.' + parts[parts.length - 2];
         if (HIGH_RISK_EXTENSIONS.includes(secondToLast)) {
             return {
-                status: 'risky',
-                reason: 'Double extension detected - potential masquerading',
+                status: 'dangerous',
+                reason: 'Double extension detected - may be disguised malware',
                 extension: secondToLast
             };
         }
