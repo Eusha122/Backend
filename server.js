@@ -17,6 +17,7 @@ import deleteFileRoute from './routes/delete-file.js';
 import deleteRoomRoute from './routes/delete-room.js';
 import roomCapacityRoute from './routes/room-capacity.js';
 import analyticsRoute from './routes/analytics.js';
+import analyticsAdminRoute from './routes/analytics-admin.js';
 import inviteRoute from './routes/invite.js';
 import verifyAuthorRoute from './routes/verify-author.js';
 import roomsRoute from './routes/rooms.js';
@@ -168,6 +169,14 @@ const inviteLimiter = rateLimit({
     standardHeaders: true,
     legacyHeaders: false,
 });
+
+const analyticsAdminLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    message: { error: 'Too many analytics requests, please wait.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 // === END SECURITY ===
 
 // Unauthenticated room endpoints (create + password verify)
@@ -218,6 +227,7 @@ app.use('/api/delete-room', deleteLimiter, deleteRoomRoute); // Prevent abuse
 app.use('/api/access-logs', accessLogsRoute);
 app.use('/api/room-capacity', roomCapacityRoute);
 app.use('/api/analytics', analyticsRoute);
+app.use('/api/analytics-admin', analyticsAdminLimiter, analyticsAdminRoute);
 import updateFileRoute from './routes/update-file.js';
 app.use('/api/update-file', updateFileRoute);
 app.use('/api/rooms', roomsLimiter, roomsRoute);

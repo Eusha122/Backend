@@ -46,6 +46,8 @@ const enforceCapacityAndUpsertGuest = async (roomId, deviceId, maxUsers) => {
     return { allowed: true };
 };
 
+const asAuthorPresenceDeviceId = (deviceId) => `author:${deviceId}`;
+
 // POST /api/room-access - Join/access event (guest only)
 router.post('/', async (req, res) => {
     try {
@@ -60,9 +62,11 @@ router.post('/', async (req, res) => {
             return res.status(404).json({ error: 'Room not found' });
         }
 
-        // Author is never inserted into presence and never counted.
+        // Author is tracked in presence for analytics/realtime visibility only.
+        // Capacity checks always exclude "author:*" device ids.
         if (isAuthorForRoom(room.author_token, authorToken)) {
-            return res.json({ success: true, skipped: 'author' });
+            await upsertGuestPresence(roomId, asAuthorPresenceDeviceId(deviceId));
+            return res.json({ success: true, skipped: 'author-capacity', tracked: 'author-presence' });
         }
 
         const maxUsers = room.max_concurrent_users || 999;
@@ -116,9 +120,10 @@ router.post('/presence', async (req, res) => {
             return res.status(404).json({ error: 'Room not found' });
         }
 
-        // Author heartbeat is ignored automatically.
+        // Author heartbeat updates analytics presence, but does not consume capacity.
         if (isAuthorForRoom(room.author_token, authorToken)) {
-            return res.json({ success: true, skipped: 'author' });
+            await upsertGuestPresence(roomId, asAuthorPresenceDeviceId(deviceId));
+            return res.json({ success: true, skipped: 'author-capacity', tracked: 'author-presence' });
         }
 
         const maxUsers = room.max_concurrent_users || 999;
