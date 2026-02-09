@@ -1,5 +1,6 @@
 import express from 'express';
 import { supabase } from '../lib/supabase.js';
+import { isAuthorToken } from '../lib/room-auth.js';
 
 const router = express.Router();
 
@@ -7,6 +8,12 @@ const router = express.Router();
 router.get('/:roomId', async (req, res) => {
     try {
         const { roomId } = req.params;
+        const authorToken = req.headers['x-author-token'];
+
+        const isAuthor = await isAuthorToken(roomId, authorToken);
+        if (!isAuthor) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
 
         // Fetch access logs for this room
         const { data: logs, error } = await supabase

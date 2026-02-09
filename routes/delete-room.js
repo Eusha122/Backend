@@ -16,18 +16,18 @@ router.delete('/:roomId', async (req, res) => {
             return res.status(403).json({ error: 'Missing authorization token' });
         }
 
-        // Get room and verify author token
-        const { data: room, error: roomFetchError } = await supabase
-            .from('rooms')
-            .select('id, author_token')
-            .eq('id', roomId)
+        // Get room secret and verify author token
+        const { data: secret, error: secretError } = await supabase
+            .from('room_secrets')
+            .select('author_token')
+            .eq('room_id', roomId)
             .single();
 
-        if (roomFetchError || !room) {
+        if (secretError || !secret) {
             return res.status(404).json({ error: 'Room not found' });
         }
 
-        if (room.author_token !== authorToken) {
+        if (secret.author_token !== authorToken) {
             console.warn(`[Delete Room] Invalid token attempt for room ${roomId.substring(0, 8)}...`);
             return res.status(403).json({ error: 'Invalid authorization token' });
         }

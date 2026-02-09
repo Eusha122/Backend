@@ -16,10 +16,10 @@ router.delete('/:fileId', async (req, res) => {
             return res.status(403).json({ error: 'Missing authorization token' });
         }
 
-        // Get file info with room's author_token
+        // Get file info with room id (secret is stored in room_secrets)
         const { data: file, error: fileError } = await supabase
             .from('files')
-            .select('*, rooms!inner(id, author_token)')
+            .select('*, rooms!inner(id)')
             .eq('id', fileId)
             .single();
 
@@ -27,8 +27,18 @@ router.delete('/:fileId', async (req, res) => {
             return res.status(404).json({ error: 'File not found' });
         }
 
-        // Verify author token matches the room's token
-        if (file.rooms.author_token !== authorToken) {
+        // Verify author token matches the room's secret token
+        const { data: secret, error: secretError } = await supabase
+            .from('room_secrets')
+            .select('author_token')
+            .eq('room_id', file.rooms.id)
+            .single();
+
+        if (secretError || !secret) {
+            return res.status(404).json({ error: 'Room not found' });
+        }
+
+        if (secret.author_token !== authorToken) {
             console.warn(`[Delete File] Invalid token attempt for file ${fileId.substring(0, 8)}...`);
             return res.status(403).json({ error: 'Invalid authorization token' });
         }

@@ -19,6 +19,7 @@ import roomCapacityRoute from './routes/room-capacity.js';
 import analyticsRoute from './routes/analytics.js';
 import inviteRoute from './routes/invite.js';
 import verifyAuthorRoute from './routes/verify-author.js';
+import roomsRoute from './routes/rooms.js';
 import { cleanupExpiredRooms } from './scripts/cleanup.js';
 
 const app = express();
@@ -84,9 +85,19 @@ app.use(cors({
     exposedHeaders: ['ETag'], // Required for multipart uploads to read ETags
 }));
 
-// Increase body size limit for large file uploads (5GB)
-app.use(express.json({ limit: '5gb' }));
-app.use(express.urlencoded({ limit: '5gb', extended: true }));
+// Body parser hardening:
+// - Small default JSON limit for most routes
+// - Larger JSON only for upload orchestration endpoints
+const defaultJsonParser = express.json({ limit: '1mb' });
+const uploadJsonParser = express.json({ limit: '10mb' });
+
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/presigned-upload') || req.path.startsWith('/api/multipart-upload')) {
+        return uploadJsonParser(req, res, next);
+    }
+    return defaultJsonParser(req, res, next);
+});
+app.use(express.urlencoded({ limit: '100kb', extended: true }));
 
 // Increase timeout for large uploads (30 minutes)
 app.use((req, res, next) => {
@@ -97,23 +108,31 @@ app.use((req, res, next) => {
 
 // Rate limiting
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 500, // Limit each IP to 500 requests per windowMs (increased for room capacity polling)
+    windowMs: Number(process.env.GLOBAL_RATE_WINDOW_MS || (15 * 60 * 1000)),
+    max: Number(process.env.GLOBAL_RATE_MAX || 500),
     message: { error: 'Too many requests from this IP, please try again later.' },
     standardHeaders: true,
     legacyHeaders: false,
 });
 
+const uploadWindowMs = Number(process.env.UPLOAD_RATE_WINDOW_MS || (15 * 60 * 1000));
+const uploadMax = Number(process.env.UPLOAD_RATE_MAX || 50);
 const uploadLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 50, // 50 uploads per 15 minutes
+    windowMs: uploadWindowMs,
+    max: uploadMax,
     message: { error: 'Too many uploads, please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
+const downloadWindowMs = Number(process.env.DOWNLOAD_RATE_WINDOW_MS || (15 * 60 * 1000));
+const downloadMax = Number(process.env.DOWNLOAD_RATE_MAX || 100);
 const downloadLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100, // 100 downloads per 15 minutes
+    windowMs: downloadWindowMs,
+    max: downloadMax,
     message: { error: 'Too many downloads, please try again later.' },
+    standardHeaders: true,
+    legacyHeaders: false,
 });
 
 // === SECURITY: Strict rate limits for abuse-prone routes ===
@@ -141,12 +160,28 @@ const presignedUploadLimiter = rateLimit({
     max: 20, // 20 presigned URL requests per minute per IP
     message: { error: 'Too many upload requests, please wait.' },
 });
+
+const inviteLimiter = rateLimit({
+    windowMs: Number(process.env.INVITE_EDGE_WINDOW_MS || (10 * 60 * 1000)),
+    max: Number(process.env.INVITE_EDGE_MAX || 6),
+    message: { error: 'Too many invite requests, please wait.' },
+    standardHeaders: true,
+    legacyHeaders: false,
+});
 // === END SECURITY ===
+
+// Unauthenticated room endpoints (create + password verify)
+const roomsLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20,
+    message: { error: 'Too many room requests, please wait.' },
+});
 
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+app.use(limiter);
 
 // API routes with rate limiting
 app.use('/api/upload', uploadLimiter, uploadRoute);
@@ -156,12 +191,26 @@ app.use('/api/download', downloadLimiter, downloadRoute);
 app.use('/api/preview', downloadLimiter, previewRoutes);
 app.use('/api/bulk-download', downloadLimiter, bulkDownloadRoute);
 
+// Separate, more lenient limiter for activity feed (polled/refetched often)
+const activityLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 120, // 120 requests per minute (2 per second)
+    message: { error: 'Too many activity refresh requests, please wait.' },
+});
+
 // Protected routes with strict rate limits
 // Presence heartbeat + leave need higher limits (sent every 10s per client)
-app.use('/api/room-access/presence', presenceLimiter, roomAccessRoute);
-app.use('/api/room-access/leave', presenceLimiter, roomAccessRoute);
-// Other room-access endpoints use strict limiter
-app.use('/api/room-access', roomAccessLimiter, roomAccessRoute);
+// Now using 30s heartbeat, so 20/min is plenty safe
+app.use('/api/room-access', (req, res, next) => {
+    if (req.path.startsWith('/presence') || req.path.startsWith('/leave')) {
+        return presenceLimiter(req, res, next);
+    }
+    if (req.path.startsWith('/activity')) {
+        return activityLimiter(req, res, next);
+    }
+    return roomAccessLimiter(req, res, next);
+});
+app.use('/api/room-access', roomAccessRoute);
 app.use('/api/delete-file', deleteLimiter, deleteFileRoute); // Prevent abuse
 app.use('/api/delete-room', deleteLimiter, deleteRoomRoute); // Prevent abuse
 
@@ -171,12 +220,14 @@ app.use('/api/room-capacity', roomCapacityRoute);
 app.use('/api/analytics', analyticsRoute);
 import updateFileRoute from './routes/update-file.js';
 app.use('/api/update-file', updateFileRoute);
-app.use('/api/invite', inviteRoute);
+app.use('/api/rooms', roomsLimiter, roomsRoute);
+app.use('/api/invite', inviteLimiter, inviteRoute);
 app.use('/api/verify-author', verifyAuthorRoute);
 
-// Schedule cleanup job (every hour)
-cron.schedule('0 * * * *', () => {
-    console.log('[Cron] Running hourly cleanup job');
+// Schedule cleanup job (defaults to every hour)
+const cleanupCron = process.env.CLEANUP_CRON || '0 * * * *';
+cron.schedule(cleanupCron, () => {
+    console.log('[Cron] Running scheduled cleanup job');
     cleanupExpiredRooms().catch((error) => {
         console.error('[Cron] Cleanup job failed:', error);
     });
@@ -191,6 +242,6 @@ app.use((err, req, res, next) => {
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 ShareSafe Backend running on port ${PORT}`);
-    console.log(`📅 Cleanup job scheduled (runs every hour)`);
+    console.log(`📅 Cleanup job scheduled (${cleanupCron})`);
     console.log(`🌍 Environment: ${config.nodeEnv}`);
 });

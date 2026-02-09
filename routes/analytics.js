@@ -2,6 +2,7 @@ import express from 'express';
 import { supabase } from '../lib/supabase.js';
 
 const router = express.Router();
+const ADMIN_TOKEN = process.env.ANALYTICS_ADMIN_TOKEN || '';
 
 // Helper to get start dates
 const getStartDate = (period) => {
@@ -15,6 +16,11 @@ const getStartDate = (period) => {
 // GET /api/analytics/live - Live dashboard stats
 router.get('/live', async (req, res) => {
     try {
+        const adminToken = req.headers['x-admin-token'];
+        if (process.env.NODE_ENV === 'production' && (!ADMIN_TOKEN || adminToken !== ADMIN_TOKEN)) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
         // 1. Active Users (IPs seen in last 5 minutes)
         const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
         const { data: activeData, error: activeError } = await supabase

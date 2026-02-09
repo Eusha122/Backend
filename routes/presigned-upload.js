@@ -4,6 +4,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { r2Client, R2_BUCKET } from '../lib/r2-client.js';
 import { supabase } from '../lib/supabase.js';
 import crypto from 'crypto';
+import { isAuthorToken } from '../lib/room-auth.js';
+import { ensureRoomQuota, mapQuotaError } from '../lib/room-quotas.js';
 
 const router = express.Router();
 
@@ -43,9 +45,19 @@ function assessFileRisk(filename, mimetype) {
 router.post('/presigned-upload', async (req, res) => {
     try {
         const { roomId, filename, fileSize, contentType } = req.body;
+        const fileSizeBytes = Number(fileSize);
 
         if (!roomId || !filename || !fileSize) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+        if (!Number.isFinite(fileSizeBytes) || fileSizeBytes <= 0) {
+            return res.status(400).json({ error: 'Invalid fileSize' });
+        }
+
+        const authorToken = req.headers['x-author-token'] || req.body.authorToken;
+        const isAuthor = await isAuthorToken(roomId, authorToken);
+        if (!isAuthor) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         // Validate room exists
@@ -64,6 +76,11 @@ router.post('/presigned-upload', async (req, res) => {
             return res.status(410).json({ error: 'Room expired' });
         }
 
+        const quotaCheck = await ensureRoomQuota(roomId, fileSizeBytes);
+        if (!quotaCheck.ok) {
+            return res.status(413).json({ error: quotaCheck.error });
+        }
+
         // Generate unique file key
         const fileKey = `${roomId}/${Date.now()}-${crypto.randomBytes(8).toString('hex')}-${filename}`;
 
@@ -75,7 +92,7 @@ router.post('/presigned-upload', async (req, res) => {
             room_id: roomId,
             filename: filename,
             file_key: fileKey,
-            size: parseInt(fileSize),
+            size: fileSizeBytes,
             scan_status: riskAssessment.status,
             scan_result: riskAssessment.reason
         });
@@ -86,7 +103,7 @@ router.post('/presigned-upload', async (req, res) => {
                 room_id: roomId,
                 filename: filename,
                 file_key: fileKey,
-                size: parseInt(fileSize),
+                size: fileSizeBytes,
                 scan_status: riskAssessment.status,
                 scan_result: riskAssessment.reason,
                 scanned_at: new Date().toISOString()
@@ -95,6 +112,10 @@ router.post('/presigned-upload', async (req, res) => {
             .single();
 
         if (dbError) {
+            const quotaError = mapQuotaError(dbError);
+            if (quotaError) {
+                return res.status(413).json({ error: quotaError.error });
+            }
             console.error('Database error:', dbError);
             return res.status(500).json({ error: 'Failed to create file record' });
         }
@@ -104,7 +125,7 @@ router.post('/presigned-upload', async (req, res) => {
             Bucket: R2_BUCKET,
             Key: fileKey,
             ContentType: contentType,
-            ContentLength: parseInt(fileSize)
+            ContentLength: fileSizeBytes
         });
 
         const presignedUrl = await getSignedUrl(r2Client, command, { expiresIn: 3600 });

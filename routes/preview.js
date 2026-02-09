@@ -3,6 +3,7 @@ import { GetObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { r2Client, R2_BUCKET } from '../lib/r2-client.js';
 import { supabase } from '../lib/supabase.js';
+import { authorizeRoomAccess } from '../lib/room-auth.js';
 
 const router = express.Router();
 
@@ -29,6 +30,13 @@ router.get('/', async (req, res) => {
         // Check if room is expired (skip for permanent rooms)
         if (!file.rooms.is_permanent && new Date(file.rooms.expires_at) < new Date()) {
             return res.status(410).json({ error: 'File expired' });
+        }
+
+        const authorToken = req.headers['x-author-token'];
+        const deviceId = req.headers['x-device-id'];
+        const auth = await authorizeRoomAccess(file.rooms.id, authorToken, deviceId);
+        if (!auth.authorized) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         // Increment preview count (ONLY tracking, no restrictions)

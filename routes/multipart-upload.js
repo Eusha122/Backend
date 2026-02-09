@@ -9,6 +9,8 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { r2Client, R2_BUCKET } from '../lib/r2-client.js';
 import { supabase } from '../lib/supabase.js';
 import crypto from 'crypto';
+import { isAuthorToken } from '../lib/room-auth.js';
+import { ensureRoomQuota, mapQuotaError } from '../lib/room-quotas.js';
 
 const router = express.Router();
 
@@ -17,9 +19,19 @@ const router = express.Router();
 router.post('/initiate', async (req, res) => {
     try {
         const { roomId, filename, fileSize, contentType } = req.body;
+        const fileSizeBytes = Number(fileSize);
 
         if (!roomId || !filename || !fileSize) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+        if (!Number.isFinite(fileSizeBytes) || fileSizeBytes <= 0) {
+            return res.status(400).json({ error: 'Invalid fileSize' });
+        }
+
+        const authorToken = req.headers['x-author-token'] || req.body.authorToken;
+        const isAuthor = await isAuthorToken(roomId, authorToken);
+        if (!isAuthor) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         // Verify room exists and is not expired
@@ -32,6 +44,11 @@ router.post('/initiate', async (req, res) => {
 
         if (roomError || !room) {
             return res.status(404).json({ error: 'Room not found or expired' });
+        }
+
+        const quotaCheck = await ensureRoomQuota(roomId, fileSizeBytes);
+        if (!quotaCheck.ok) {
+            return res.status(413).json({ error: quotaCheck.error });
         }
 
         // Generate unique file key
@@ -69,10 +86,16 @@ router.post('/initiate', async (req, res) => {
 // Generates presigned URLs for uploading individual parts
 router.post('/get-part-urls', async (req, res) => {
     try {
-        const { uploadId, fileKey, partNumbers } = req.body;
+        const { uploadId, fileKey, partNumbers, roomId } = req.body;
 
-        if (!uploadId || !fileKey || !Array.isArray(partNumbers)) {
+        if (!uploadId || !fileKey || !Array.isArray(partNumbers) || !roomId) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const authorToken = req.headers['x-author-token'] || req.body.authorToken;
+        const isAuthor = await isAuthorToken(roomId, authorToken);
+        if (!isAuthor) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         // Increased limit to support very large files (e.g. 1GB+ with 8MB chunks = 128+ parts)
@@ -116,9 +139,19 @@ router.post('/get-part-urls', async (req, res) => {
 router.post('/complete', async (req, res) => {
     try {
         const { uploadId, fileKey, parts, roomId, filename, fileSize, message } = req.body;
+        const fileSizeBytes = Number(fileSize);
 
         if (!uploadId || !fileKey || !parts || !roomId || !filename || !fileSize) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+        if (!Number.isFinite(fileSizeBytes) || fileSizeBytes <= 0) {
+            return res.status(400).json({ error: 'Invalid fileSize' });
+        }
+
+        const authorToken = req.headers['x-author-token'] || req.body.authorToken;
+        const isAuthor = await isAuthorToken(roomId, authorToken);
+        if (!isAuthor) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         // Validate parts array
@@ -150,6 +183,11 @@ router.post('/complete', async (req, res) => {
             return res.status(404).json({ error: 'Room not found or expired' });
         }
 
+        const quotaCheck = await ensureRoomQuota(roomId, fileSizeBytes);
+        if (!quotaCheck.ok) {
+            return res.status(413).json({ error: quotaCheck.error });
+        }
+
         // Complete the multipart upload with R2
         const completeCommand = new CompleteMultipartUploadCommand({
             Bucket: R2_BUCKET,
@@ -172,7 +210,7 @@ router.post('/complete', async (req, res) => {
             room_id: roomId,
             filename,
             file_key: fileKey,
-            size: fileSize,
+            size: fileSizeBytes,
             scan_status: 'unknown', // Will be updated by async scan
             scan_result: 'Pending scan...',
         };
@@ -210,6 +248,10 @@ router.post('/complete', async (req, res) => {
         }
 
         if (dbError) {
+            const quotaError = mapQuotaError(dbError);
+            if (quotaError) {
+                return res.status(413).json({ error: quotaError.error });
+            }
             console.error('[Multipart] Database error:', dbError);
             return res.status(500).json({ error: 'Failed to save file metadata' });
         }
@@ -221,9 +263,9 @@ router.post('/complete', async (req, res) => {
         const LARGE_FILE_THRESHOLD = 50 * 1024 * 1024; // 50MB
         let finalFileData = fileData;
 
-        if (fileSize > LARGE_FILE_THRESHOLD) {
+        if (fileSizeBytes > LARGE_FILE_THRESHOLD) {
             // Auto-mark large files as safe (they're unlikely to be malicious executables)
-            console.log(`[Multipart] ⏩ Large file (${(fileSize / (1024 * 1024)).toFixed(1)}MB) - auto-marking as safe`);
+            console.log(`[Multipart] ⏩ Large file (${(fileSizeBytes / (1024 * 1024)).toFixed(1)}MB) - auto-marking as safe`);
             const { data: updatedFile, error: updateError } = await supabase
                 .from('files')
                 .update({
@@ -274,10 +316,16 @@ router.post('/complete', async (req, res) => {
 // Aborts a multipart upload and cleans up
 router.post('/abort', async (req, res) => {
     try {
-        const { uploadId, fileKey } = req.body;
+        const { uploadId, fileKey, roomId } = req.body;
 
-        if (!uploadId || !fileKey) {
+        if (!uploadId || !fileKey || !roomId) {
             return res.status(400).json({ error: 'Missing required fields' });
+        }
+
+        const authorToken = req.headers['x-author-token'] || req.body.authorToken;
+        const isAuthor = await isAuthorToken(roomId, authorToken);
+        if (!isAuthor) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         const command = new AbortMultipartUploadCommand({

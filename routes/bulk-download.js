@@ -4,6 +4,8 @@ import { r2Client, R2_BUCKET } from '../lib/r2-client.js';
 import { supabase } from '../lib/supabase.js';
 import archiver from 'archiver';
 import { logAccess } from '../lib/access-logger.js';
+import { authorizeRoomAccess } from '../lib/room-auth.js';
+import path from 'path';
 
 const router = express.Router();
 
@@ -14,6 +16,13 @@ router.get('/', async (req, res) => {
 
         if (!roomId) {
             return res.status(400).json({ error: 'Missing roomId' });
+        }
+
+        const authorToken = req.headers['x-author-token'];
+        const deviceId = req.headers['x-device-id'];
+        const auth = await authorizeRoomAccess(roomId, authorToken, deviceId);
+        if (!auth.authorized) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         // Fetch all files in the room
@@ -67,7 +76,8 @@ router.get('/', async (req, res) => {
                 const r2Response = await r2Client.send(command);
 
                 // Add file to ZIP with original filename
-                archive.append(r2Response.Body, { name: file.filename });
+                const safeName = path.basename(String(file.filename || 'file')).replace(/[\r\n]/g, '');
+                archive.append(r2Response.Body, { name: safeName || 'file' });
             } catch (error) {
                 console.error(`Failed to add file ${file.filename} to archive:`, error);
                 // Continue with other files even if one fails

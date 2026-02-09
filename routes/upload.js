@@ -5,6 +5,8 @@ import { r2Client, R2_BUCKET } from '../lib/r2-client.js';
 import { supabase } from '../lib/supabase.js';
 import crypto from 'crypto';
 import { logAccess } from '../lib/access-logger.js';
+import { isAuthorToken } from '../lib/room-auth.js';
+import { ensureRoomQuota, mapQuotaError } from '../lib/room-quotas.js';
 
 const router = express.Router();
 
@@ -152,6 +154,16 @@ router.post('/', upload.single('file'), async (req, res) => {
             return res.status(400).json({ error: 'Missing roomId or file' });
         }
 
+        if (process.env.NODE_ENV === 'production') {
+            return res.status(403).json({ error: 'Direct upload disabled in production' });
+        }
+
+        const authorToken = req.headers['x-author-token'] || req.body.authorToken;
+        const isAuthor = await isAuthorToken(roomId, authorToken);
+        if (!isAuthor) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
         // ============================================
         // Initial Risk Assessment
         // ============================================
@@ -178,6 +190,12 @@ router.post('/', upload.single('file'), async (req, res) => {
         // Check expiration (skip for permanent rooms)
         if (!room.is_permanent && new Date(room.expires_at) < new Date()) {
             return res.status(410).json({ error: 'Room expired' });
+        }
+
+        // Per-room abuse controls: file count and total size quota
+        const quotaCheck = await ensureRoomQuota(roomId, file.size);
+        if (!quotaCheck.ok) {
+            return res.status(413).json({ error: quotaCheck.error });
         }
 
         // Generate unique file key
@@ -219,6 +237,10 @@ router.post('/', upload.single('file'), async (req, res) => {
             .single();
 
         if (dbError) {
+            const quotaError = mapQuotaError(dbError);
+            if (quotaError) {
+                return res.status(413).json({ error: quotaError.error });
+            }
             console.error('Database error:', dbError);
             return res.status(500).json({ error: 'Failed to save file metadata' });
         }

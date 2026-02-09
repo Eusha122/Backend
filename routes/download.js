@@ -4,6 +4,7 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { r2Client, R2_BUCKET } from '../lib/r2-client.js';
 import { supabase } from '../lib/supabase.js';
 import { logAccess } from '../lib/access-logger.js';
+import { authorizeRoomAccess } from '../lib/room-auth.js';
 
 const router = express.Router();
 
@@ -19,7 +20,7 @@ router.get('/', async (req, res) => {
         // Validate file exists and fetch room info including mode and status
         const { data: file, error: fileError } = await supabase
             .from('files')
-            .select('*, rooms!inner(id, expires_at, one_time_download, mode, status, remaining_files)')
+            .select('*, rooms!inner(id, expires_at, one_time_download, mode, status, remaining_files, download_in_progress)')
             .eq('file_key', fileKey)
             .single();
 
@@ -48,6 +49,14 @@ router.get('/', async (req, res) => {
             return res.status(410).json({ error: 'File expired' });
         }
 
+        // Authorization: author token OR device presence
+        const authorToken = req.headers['x-author-token'];
+        const deviceId = req.headers['x-device-id'] || null;
+        const auth = await authorizeRoomAccess(file.rooms.id, authorToken, deviceId);
+        if (!auth.authorized) {
+            return res.status(403).json({ error: 'Forbidden' });
+        }
+
         // ENFORCE one-time download OR burn mode already downloaded
         if ((file.rooms.one_time_download || file.burn_after_download) && file.download_count > 0) {
             return res.status(410).json({
@@ -56,8 +65,12 @@ router.get('/', async (req, res) => {
             });
         }
 
-        // Extract deviceId from header for tracking
-        const deviceId = req.headers['x-device-id'] || null;
+        if ((file.rooms.one_time_download || file.burn_after_download) && file.rooms.download_in_progress) {
+            return res.status(409).json({
+                error: 'Download already in progress',
+                message: 'This file is currently being downloaded'
+            });
+        }
 
         // Resolve guest number if deviceId is present
         let guestNumber = null;
@@ -75,19 +88,7 @@ router.get('/', async (req, res) => {
             }
         }
 
-        // Log file download with device tracking and resolved guest number
-        await logAccess(file.rooms.id, 'file_download', req, null, deviceId, guestNumber);
-
-        // Increment download count BEFORE generating signed URL
-        const newDownloadCount = file.download_count + 1;
-        const { error: updateError } = await supabase
-            .from('files')
-            .update({ download_count: newDownloadCount })
-            .eq('id', file.id);
-
-        if (updateError) {
-            console.error('[Download] Failed to update download count:', updateError);
-        }
+        // NOTE: Download count + logging happens in POST /api/download/end after completion.
 
         // Generate signed URL (5 minutes expiry)
         const command = new GetObjectCommand({
@@ -99,149 +100,7 @@ router.get('/', async (req, res) => {
             expiresIn: 300, // 5 minutes
         });
 
-        // 🔥 BURN MODE: Handle file destruction after download
         const isBurnMode = file.burn_after_download || file.rooms.mode === 'burn';
-
-        if (isBurnMode || file.rooms.one_time_download) {
-            console.log(`[🔥 Burn Mode] File ${file.filename} downloaded, scheduling destruction...`);
-
-            // Delete after 5 seconds to ensure download completes
-            setTimeout(async () => {
-                try {
-                    // 1. Delete from R2 storage
-                    await r2Client.send(new DeleteObjectCommand({
-                        Bucket: R2_BUCKET,
-                        Key: fileKey
-                    }));
-                    console.log(`[🔥 Burn Mode] ✓ Deleted from R2: ${fileKey}`);
-
-                    // 2. Update file status to destroyed (for real-time notification)
-                    await supabase
-                        .from('files')
-                        .update({ file_status: 'destroyed' })
-                        .eq('id', file.id);
-
-                    // 3. Delete file record from database
-                    const { error: deleteError } = await supabase
-                        .from('files')
-                        .delete()
-                        .eq('id', file.id);
-
-                    if (deleteError) {
-                        console.error(`[🔥 Burn Mode] ✗ Failed to delete from database:`, deleteError);
-                    } else {
-                        console.log(`[🔥 Burn Mode] ✓ Deleted from database: ${file.filename}`);
-                    }
-
-                    // 4. 🔥 BURN MODE: Decrement remaining_files and check for room termination
-                    if (file.rooms.mode === 'burn') {
-                        const { data: updatedRoom, error: roomUpdateError } = await supabase
-                            .from('rooms')
-                            .select('remaining_files')
-                            .eq('id', file.rooms.id)
-                            .single();
-
-                        if (!roomUpdateError && updatedRoom) {
-                            const newRemainingFiles = Math.max(0, (updatedRoom.remaining_files || 1) - 1);
-
-                            // Update remaining_files count
-                            const { data: updateResult, error: updateCountError } = await supabase
-                                .from('rooms')
-                                .update({ remaining_files: newRemainingFiles })
-                                .eq('id', file.rooms.id)
-                                .select('remaining_files')
-                                .single();
-
-                            if (updateCountError) {
-                                console.error(`[🔥 Burn Mode] Failed to update remaining files:`, updateCountError);
-                            } else {
-                                console.log(`[🔥 Burn Mode] Room ${file.rooms.id} remaining files updated to: ${updateResult.remaining_files} (calculated: ${newRemainingFiles})`);
-
-                                // 5. If no files remaining, start room termination countdown
-                                if (updateResult.remaining_files === 0) {
-                                    console.log(`[🔥 Burn Mode] 🚨 All files consumed! Starting room termination...`);
-
-                                    // Set room status to 'terminating' with timestamp
-                                    const { error: termError } = await supabase
-                                        .from('rooms')
-                                        .update({
-                                            status: 'terminating',
-                                            termination_started_at: new Date().toISOString()
-                                        })
-                                        .eq('id', file.rooms.id);
-
-                                    if (termError) {
-                                        console.error(`[🔥 Burn Mode] Failed to set terminating status:`, termError);
-                                    } else {
-                                        console.log(`[🔥 Burn Mode] Room status set to 'terminating'`);
-                                    }
-
-                                    // 6. After 15 seconds (5s download buffer + 10s countdown), destroy room
-                                    setTimeout(async () => {
-                                        try {
-                                            // Final check - room should still be terminating
-                                            const { data: roomCheck } = await supabase
-                                                .from('rooms')
-                                                .select('status, download_in_progress')
-                                                .eq('id', file.rooms.id)
-                                                .single();
-
-
-                                            if (roomCheck && roomCheck.status === 'terminating') {
-                                                // 🔥 CHECK DOWNLOAD LOCK: Don't destroy if download in progress
-                                                if (roomCheck.download_in_progress) {
-                                                    console.log(`[🔥 Burn Mode] ⏳ Download in progress, delaying destruction...`);
-                                                    // Re-schedule check in 30 seconds
-                                                    setTimeout(arguments.callee, 30000);
-                                                    return;
-                                                }
-
-                                                // Delete any remaining files from R2 (shouldn't be any, but safety)
-                                                const { data: remainingFiles } = await supabase
-                                                    .from('files')
-                                                    .select('file_key')
-                                                    .eq('room_id', file.rooms.id);
-
-                                                if (remainingFiles && remainingFiles.length > 0) {
-                                                    for (const f of remainingFiles) {
-                                                        try {
-                                                            await r2Client.send(new DeleteObjectCommand({
-                                                                Bucket: R2_BUCKET,
-                                                                Key: f.file_key
-                                                            }));
-                                                        } catch (e) {
-                                                            console.error(`[🔥 Burn Mode] Failed to delete orphan file:`, e);
-                                                        }
-                                                    }
-                                                }
-
-                                                // Set room to destroyed (will trigger real-time event)
-                                                await supabase
-                                                    .from('rooms')
-                                                    .update({ status: 'destroyed' })
-                                                    .eq('id', file.rooms.id);
-
-                                                // Delete room from database
-                                                await supabase
-                                                    .from('rooms')
-                                                    .delete()
-                                                    .eq('id', file.rooms.id);
-
-                                                console.log(`[🔥 Burn Mode] 💀 Room ${file.rooms.id} has been permanently destroyed`);
-                                            }
-                                        } catch (error) {
-                                            console.error(`[🔥 Burn Mode] Room destruction error:`, error);
-                                        }
-                                    }, 30000); // 30-second countdown after terminating status
-                                }
-                            }
-                        }
-                    }
-                } catch (error) {
-                    console.error(`[🔥 Burn Mode] ✗ File destruction error:`, error);
-                }
-            }, 120000); // 120-second delay for large file download + decryption
-        }
 
         res.json({
             signedUrl,
@@ -258,10 +117,16 @@ router.get('/', async (req, res) => {
 // POST /api/download/start - Mark download as started (lock room destruction)
 router.post('/start', async (req, res) => {
     try {
-        const { roomId, fileId } = req.body;
+        const { roomId, fileId, deviceId } = req.body;
+        const authorToken = req.headers['x-author-token'];
 
         if (!roomId) {
             return res.status(400).json({ error: 'Missing roomId' });
+        }
+
+        const auth = await authorizeRoomAccess(roomId, authorToken, deviceId);
+        if (!auth.authorized) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         console.log(`[Download Lock] 🔒 Download started for room ${roomId}, file ${fileId || 'unknown'}`);
@@ -289,10 +154,16 @@ router.post('/start', async (req, res) => {
 // POST /api/download/end - Mark download as finished (unlock room destruction)
 router.post('/end', async (req, res) => {
     try {
-        const { roomId, fileId, success } = req.body;
+        const { roomId, fileId, success, deviceId } = req.body;
+        const authorToken = req.headers['x-author-token'];
 
         if (!roomId) {
             return res.status(400).json({ error: 'Missing roomId' });
+        }
+
+        const auth = await authorizeRoomAccess(roomId, authorToken, deviceId);
+        if (!auth.authorized) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         console.log(`[Download Lock] 🔓 Download ended for room ${roomId}, file ${fileId || 'unknown'}, success: ${success}`);
@@ -310,6 +181,151 @@ router.post('/end', async (req, res) => {
             return res.status(500).json({ error: 'Failed to clear download lock' });
         }
 
+        // Log + increment ONLY on successful completion (file reached user's device)
+        if (success && deviceId && fileId) {
+            const { data: file, error: fileError } = await supabase
+                .from('files')
+                .select('*, rooms!inner(id, mode, one_time_download, remaining_files, status, download_in_progress)')
+                .eq('id', fileId)
+                .single();
+
+            if (fileError || !file) {
+                return res.status(404).json({ error: 'File not found' });
+            }
+
+            // Increment download count on completion
+            const newDownloadCount = (file.download_count || 0) + 1;
+            await supabase
+                .from('files')
+                .update({ download_count: newDownloadCount })
+                .eq('id', file.id);
+
+            // Deduplicate: Check if this specific file download was already logged
+            const { data: existingLog } = await supabase
+                .from('access_logs')
+                .select('id')
+                .eq('room_id', roomId)
+                .eq('device_id', deviceId)
+                .eq('event_type', 'file_download')
+                .limit(1)
+                .maybeSingle();
+
+            if (!existingLog) {
+                // Resolve guest number
+                let guestNumber = null;
+                try {
+                    const { data } = await supabase.rpc('assign_user_number', {
+                        p_room_id: roomId,
+                        p_device_id: deviceId
+                    });
+                    guestNumber = data;
+                } catch (err) {
+                    console.error('[Download] Failed to resolve guest number:', err);
+                }
+
+                await logAccess(roomId, 'file_download', req, null, deviceId, guestNumber);
+                console.log(`[Download] ✓ Logged download for device ${deviceId.substring(0, 8)}...`);
+            } else {
+                console.log(`[Download] Skipped duplicate log for device ${deviceId.substring(0, 8)}...`);
+            }
+
+            // 🔥 Burn/one-time download destruction happens AFTER completion
+            const isBurnMode = file.burn_after_download || file.rooms.mode === 'burn';
+            if (isBurnMode || file.rooms.one_time_download) {
+                setTimeout(async () => {
+                    try {
+                        await r2Client.send(new DeleteObjectCommand({
+                            Bucket: R2_BUCKET,
+                            Key: file.file_key
+                        }));
+
+                        await supabase
+                            .from('files')
+                            .update({ file_status: 'destroyed' })
+                            .eq('id', file.id);
+
+                        await supabase
+                            .from('files')
+                            .delete()
+                            .eq('id', file.id);
+
+                        if (file.rooms.mode === 'burn') {
+                            const { data: updatedRoom } = await supabase
+                                .from('rooms')
+                                .select('remaining_files')
+                                .eq('id', file.rooms.id)
+                                .single();
+
+                            if (updatedRoom) {
+                                const newRemainingFiles = Math.max(0, (updatedRoom.remaining_files || 1) - 1);
+                                const { data: updateResult } = await supabase
+                                    .from('rooms')
+                                    .update({ remaining_files: newRemainingFiles })
+                                    .eq('id', file.rooms.id)
+                                    .select('remaining_files')
+                                    .single();
+
+                                if (updateResult && updateResult.remaining_files === 0) {
+                                    await supabase
+                                        .from('rooms')
+                                        .update({
+                                            status: 'terminating',
+                                            termination_started_at: new Date().toISOString()
+                                        })
+                                        .eq('id', file.rooms.id);
+
+                                    setTimeout(async () => {
+                                        const { data: roomCheck } = await supabase
+                                            .from('rooms')
+                                            .select('status, download_in_progress')
+                                            .eq('id', file.rooms.id)
+                                            .single();
+
+                                        if (roomCheck && roomCheck.status === 'terminating') {
+                                            if (roomCheck.download_in_progress) {
+                                                setTimeout(arguments.callee, 30000);
+                                                return;
+                                            }
+
+                                            const { data: remainingFiles } = await supabase
+                                                .from('files')
+                                                .select('file_key')
+                                                .eq('room_id', file.rooms.id);
+
+                                            if (remainingFiles && remainingFiles.length > 0) {
+                                                for (const f of remainingFiles) {
+                                                    try {
+                                                        await r2Client.send(new DeleteObjectCommand({
+                                                            Bucket: R2_BUCKET,
+                                                            Key: f.file_key
+                                                        }));
+                                                    } catch (e) {
+                                                        console.error(`[🔥 Burn Mode] Failed to delete orphan file:`, e);
+                                                    }
+                                                }
+                                            }
+
+                                            await supabase
+                                                .from('rooms')
+                                                .update({ status: 'destroyed' })
+                                                .eq('id', file.rooms.id);
+
+                                            await supabase
+                                                .from('rooms')
+                                                .delete()
+                                                .eq('id', file.rooms.id);
+                                        }
+                                    }, 30000);
+                                }
+                            }
+                        }
+                    } catch (error) {
+                        console.error('[Burn Mode] Destruction error:', error);
+                    }
+                }, 3000);
+            }
+        }
+
         res.json({ success: true, locked: false });
     } catch (error) {
         console.error('[Download Lock] Error:', error);
@@ -320,10 +336,16 @@ router.post('/end', async (req, res) => {
 // POST /api/download/bulk-mark - Mark multiple files as downloaded (for ZIP bulk download)
 router.post('/bulk-mark', async (req, res) => {
     try {
-        const { roomId, fileIds } = req.body;
+        const { roomId, fileIds, deviceId } = req.body;
+        const authorToken = req.headers['x-author-token'];
 
         if (!roomId || !fileIds || !Array.isArray(fileIds) || fileIds.length === 0) {
             return res.status(400).json({ error: 'Missing roomId or fileIds' });
+        }
+
+        const auth = await authorizeRoomAccess(roomId, authorToken, deviceId || req.headers['x-device-id']);
+        if (!auth.authorized) {
+            return res.status(403).json({ error: 'Forbidden' });
         }
 
         console.log(`[Bulk Mark] Marking ${fileIds.length} files as downloaded in room ${roomId}`);
@@ -397,9 +419,8 @@ router.post('/bulk-mark', async (req, res) => {
             }
         }
 
-        // Log bulk download with device tracking
-        const deviceId = req.headers['x-device-id'] || req.body.deviceId || null;
-        await logAccess(roomId, 'bulk_download', req, null, deviceId);
+        // NOTE: bulk_download is logged in bulk-download.js when actual download occurs
+        // No need to log here (this is just marking files)
 
         res.json({
             success: true,
